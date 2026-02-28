@@ -1,0 +1,15 @@
+{
+	"required": true,
+	"package": "dev.mcrib884.musync.mixin",
+	"compatibilityLevel": "JAVA_${java_version}",
+	"mixins": [
+	],
+	"client": [
+		"ChannelMixin",
+		"MinecraftMixin",
+		"MusicManagerMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
