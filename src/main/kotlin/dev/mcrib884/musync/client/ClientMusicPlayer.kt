@@ -5,7 +5,11 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundSource
 import net.minecraft.resources.ResourceLocation
+//? if >=1.20 {
 import net.minecraft.core.registries.BuiltInRegistries
+//?} else {
+/*import net.minecraft.core.Registry*/
+//?}
 import net.minecraftforge.network.PacketDistributor
 import org.lwjgl.openal.AL10
 
@@ -46,10 +50,6 @@ object ClientMusicPlayer {
                 MusicSyncPacket.Action.SKIP -> {
                     stopMusic()
                 }
-                MusicSyncPacket.Action.SYNC_CHECK -> {
-
-                    handleSyncCheck(packet.trackId, packet.startPositionMs)
-                }
                 MusicSyncPacket.Action.OPEN_GUI -> {
 
                 }
@@ -68,9 +68,15 @@ object ClientMusicPlayer {
         }
 
         val oggPath: String
+        var oggNamespace = "minecraft"
         if (specificSound.isNotEmpty()) {
 
-            oggPath = specificSound
+            if (specificSound.contains(":")) {
+                oggNamespace = specificSound.substringBefore(":")
+                oggPath = specificSound.substringAfter(":")
+            } else {
+                oggPath = specificSound
+            }
         } else {
 
             val soundLocation = if (trackId.contains(":")) {
@@ -83,7 +89,11 @@ object ClientMusicPlayer {
                 return
             }
 
+            //? if >=1.20 {
             val soundEvent = BuiltInRegistries.SOUND_EVENT.get(soundLocation)
+            //?} else {
+            /*val soundEvent = Registry.SOUND_EVENT.get(soundLocation)*/
+            //?}
             if (soundEvent == null) {
                 println("[MuSync] Unknown sound event: $trackId")
                 return
@@ -97,6 +107,21 @@ object ClientMusicPlayer {
                 return
             }
             oggPath = resolvedSound.location.path
+            oggNamespace = resolvedSound.location.namespace
+
+            val weighedEvents = mc.soundManager.getSoundEvent(soundLocation)
+            if (weighedEvents != null) {
+                val allSounds = weighedEvents.list.mapNotNull { entry ->
+                    try {
+                        val s = entry.getSound(net.minecraft.util.RandomSource.create())
+                        if (s.type == net.minecraft.client.resources.sounds.Sound.Type.FILE)
+                            "${s.location.namespace}:${s.location.path}"
+                        else null
+                    } catch (_: Exception) { null }
+                }
+                println("[MuSync] Pool '$trackId' has ${allSounds.size} sound(s):")
+                allSounds.forEach { println("  - $it") }
+            }
         }
 
         currentTrack = trackId
@@ -105,26 +130,26 @@ object ClientMusicPlayer {
         isPaused = false
         playStartTime = System.currentTimeMillis()
 
-        val source = CustomTrackPlayer.playFromResource(oggPath, startPositionMs)
+        val source = CustomTrackPlayer.playFromResource(oggPath, startPositionMs, oggNamespace)
         if (source == -1) {
-            println("[MuSync] Failed to play: $oggPath")
+            println("[MuSync] Failed to play: $oggNamespace:$oggPath")
             isPlaying = false
             currentTrack = null
             return
         }
 
         customTrackSource = source
-        println("[MuSync] Playing: $oggPath" + if (startPositionMs > 0) " (from ${startPositionMs}ms)" else "")
+        println("[MuSync] Playing: $oggNamespace:$oggPath" + if (startPositionMs > 0) " (from ${startPositionMs}ms)" else "")
 
         val durationMs = OggDurationReader.getDurationMs(
-            ResourceLocation("minecraft", oggPath)
+            ResourceLocation(oggNamespace, oggPath)
         )
         if (durationMs > 0) {
             val infoPacket = MusicClientInfoPacket(
                 action = MusicClientInfoPacket.Action.REPORT_DURATION,
                 trackId = trackId,
                 durationMs = durationMs,
-                resolvedName = oggPath
+                resolvedName = "$oggNamespace:$oggPath"
             )
             PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), infoPacket)
         }
@@ -320,30 +345,6 @@ object ClientMusicPlayer {
                     durationMs = 0
                 )
                 PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), endPacket)
-            }
-        }
-    }
-
-    private const val SYNC_DRIFT_THRESHOLD_MS = 50L
-
-    private fun handleSyncCheck(trackId: String, serverPositionMs: Long) {
-
-        if (currentTrack != trackId || !isPlaying || isPaused || gamePaused) return
-        if (customTrackSource == -1) return
-
-        val alPositionSec = AL10.alGetSourcef(customTrackSource, org.lwjgl.openal.AL11.AL_SEC_OFFSET)
-        val actualPositionMs = (alPositionSec * 1000).toLong()
-
-        val drift = actualPositionMs - serverPositionMs
-
-        if (kotlin.math.abs(drift) > SYNC_DRIFT_THRESHOLD_MS) {
-
-            val targetSec = serverPositionMs / 1000f
-            if (targetSec >= 0f) {
-                AL10.alSourcef(customTrackSource, org.lwjgl.openal.AL11.AL_SEC_OFFSET, targetSec)
-
-                trackStartTime = System.currentTimeMillis() - serverPositionMs
-                println("[MuSync] Sync correction: drift=${drift}ms, corrected to ${serverPositionMs}ms")
             }
         }
     }

@@ -60,6 +60,7 @@ object CustomTrackPlayer {
 
                 val source = AL10.alGenSources()
                 AL10.alSourcei(source, AL10.AL_BUFFER, alBuffer)
+                AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
                 AL10.alSourcef(source, AL10.AL_GAIN, 1.0f)
                 AL10.alSourcei(source, AL10.AL_LOOPING, AL10.AL_FALSE)
                 AL10.alSourcePlay(source)
@@ -157,6 +158,7 @@ object CustomTrackPlayer {
 
             val source = AL10.alGenSources()
             AL10.alSourcei(source, AL10.AL_BUFFER, alBuffer)
+            AL10.alSourcei(source, AL10.AL_SOURCE_RELATIVE, AL10.AL_TRUE)
             AL10.alSourcef(source, AL10.AL_GAIN, 1.0f)
             AL10.alSourcei(source, AL10.AL_LOOPING, AL10.AL_FALSE)
             AL10.alSourcePlay(source)
@@ -189,9 +191,9 @@ object CustomTrackPlayer {
         }
     }
 
-    fun playFromResource(soundPath: String, seekMs: Long = 0): Int {
+    fun playFromResource(soundPath: String, seekMs: Long = 0, namespace: String = "minecraft"): Int {
         try {
-            val fileLoc = ResourceLocation("minecraft", "sounds/$soundPath.ogg")
+            val fileLoc = ResourceLocation(namespace, "sounds/$soundPath.ogg")
             val resource = Minecraft.getInstance().resourceManager.getResource(fileLoc).orElse(null)
             if (resource == null) {
                 println("[MuSync] Could not find resource: $fileLoc")

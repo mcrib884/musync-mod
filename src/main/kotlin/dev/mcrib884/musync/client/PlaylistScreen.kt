@@ -3,7 +3,12 @@ package dev.mcrib884.musync.client
 import dev.mcrib884.musync.network.MusicControlPacket
 import dev.mcrib884.musync.network.PacketHandler
 import net.minecraft.client.Minecraft
+//? if >=1.20 {
 import net.minecraft.client.gui.GuiGraphics
+//?} else {
+/*import com.mojang.blaze3d.vertex.PoseStack
+import net.minecraft.client.gui.GuiComponent*/
+//?}
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -74,11 +79,18 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         panelX = (width - panelW) / 2
         panelY = (height - panelH) / 2
 
+        //? if >=1.20 {
         addRenderableWidget(Button.builder(Component.literal("\u2190 Back")) {
             Minecraft.getInstance().setScreen(MusicControlScreen())
         }.bounds(panelX + 6, panelY + panelH - 24, 50, 18).build())
+        //?} else {
+        /*addRenderableWidget(Button(panelX + 6, panelY + panelH - 24, 50, 18, Component.literal("\u2190 Back")) {
+            Minecraft.getInstance().setScreen(MusicControlScreen())
+        })*/
+        //?}
     }
 
+    //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         renderBackground(graphics)
 
@@ -156,6 +168,85 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
         super.render(graphics, mouseX, mouseY, partialTick)
     }
+    //?} else {
+    /*override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, partialTick: Float) {
+        renderBackground(poseStack)
+
+        GuiComponent.fill(poseStack, panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
+
+        val cx = panelX + panelW / 2
+
+        GuiComponent.drawCenteredString(poseStack, font, "\u266B Playlist Queue \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
+
+        val status = ClientMusicPlayer.getCurrentStatus()
+        val queue = status?.queue ?: emptyList()
+
+        if (queue.isEmpty()) {
+            GuiComponent.drawCenteredString(poseStack, font, "Queue is empty", cx, panelY + 60, 0xFF666666.toInt())
+            GuiComponent.drawCenteredString(poseStack, font, "Use the Track Browser to add tracks", cx, panelY + 76, 0xFF444466.toInt())
+        } else {
+
+            val listY = panelY + 26
+            GuiComponent.drawString(poseStack, font, "#", panelX + 10, listY, 0xFF888888.toInt())
+            GuiComponent.drawString(poseStack, font, "Track", panelX + 24, listY, 0xFF888888.toInt())
+
+            val maxScroll = (queue.size - visibleRows).coerceAtLeast(0)
+            scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+
+            for (i in 0 until visibleRows) {
+                val idx = i + scrollOffset
+                if (idx >= queue.size) break
+
+                val y = listY + 14 + i * rowH
+                val trackId = queue[idx]
+
+                if (i % 2 == 0) {
+                    GuiComponent.fill(poseStack, panelX + 4, y - 1, panelX + panelW - 4, y + rowH - 3, 0x20FFFFFF)
+                }
+
+                GuiComponent.drawString(poseStack, font, "${idx + 1}.", panelX + 10, y, 0xFF999999.toInt())
+
+                val displayName = formatTrack(trackId)
+                val nameW = panelW - 60
+                val trimmed = if (font.width(displayName) > nameW) {
+                    font.plainSubstrByWidth(displayName, nameW) + "..."
+                } else displayName
+                GuiComponent.drawString(poseStack, font, trimmed, panelX + 24, y, 0xFFDDDDDD.toInt())
+
+                if (isOp) {
+                    val xBtnX = panelX + panelW - 20
+                    val hovered = mouseX >= xBtnX && mouseX <= xBtnX + 12 && mouseY >= y - 1 && mouseY < y + rowH - 3
+                    val color = if (hovered) 0xFFFF5555.toInt() else 0xFF884444.toInt()
+                    GuiComponent.drawString(poseStack, font, "\u2716", xBtnX, y, color)
+                }
+            }
+
+            if (queue.size > visibleRows) {
+                val barTotalH = visibleRows * rowH
+                val barStartY = listY + 14
+                val barX = panelX + panelW - 10
+                val barW = 6
+                val thumbH = ((visibleRows.toFloat() / queue.size) * barTotalH).toInt().coerceAtLeast(10)
+                val thumbY = barStartY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
+
+                GuiComponent.fill(poseStack, barX, barStartY, barX + barW, barStartY + barTotalH, 0xFF222244.toInt())
+
+                val thumbColor = if (draggingScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+                GuiComponent.fill(poseStack, barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
+            }
+
+            GuiComponent.drawCenteredString(poseStack, font, "${queue.size} track${if (queue.size > 1) "s" else ""} in queue", cx, panelY + panelH - 36, 0xFF666688.toInt())
+        }
+
+        if (!isOp) {
+            GuiComponent.drawCenteredString(poseStack, font, "\u26A0 View only (OP required)", cx, panelY + panelH - 12, 0xFFFF5555.toInt())
+        }
+
+        super.render(poseStack, mouseX, mouseY, partialTick)
+    }*/
+    //?}
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {

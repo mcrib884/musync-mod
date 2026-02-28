@@ -12,7 +12,7 @@ data class MusicSyncPacket(
     val specificSound: String = ""
 ) {
     enum class Action {
-        PLAY, STOP, PAUSE, RESUME, SKIP, OPEN_GUI, SYNC_CHECK
+        PLAY, STOP, PAUSE, RESUME, SKIP, OPEN_GUI
     }
 
     companion object {

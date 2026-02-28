@@ -10,7 +10,7 @@ data class MusicControlPacket(
     val queuePosition: Int?
 ) {
     enum class Action {
-        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC
+        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL
     }
 
     companion object {

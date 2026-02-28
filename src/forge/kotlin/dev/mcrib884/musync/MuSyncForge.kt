@@ -20,11 +20,10 @@ import net.minecraftforge.event.server.ServerStartedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext
 import net.minecraftforge.fml.loading.FMLEnvironment
 import net.minecraftforge.api.distmarker.Dist
 import net.minecraftforge.network.PacketDistributor
-import org.lwjgl.glfw.GLFW
+import thedarkcolour.kotlinforforge.forge.MOD_BUS
 
 @Mod(MOD_ID)
 class MuSyncForge {
@@ -37,7 +36,7 @@ class MuSyncForge {
     }
 
     init {
-        val modEventBus = FMLJavaModLoadingContext.get().modEventBus
+        val modEventBus = MOD_BUS
         modEventBus.addListener(::onCommonSetup)
 
         MinecraftForge.EVENT_BUS.addListener<ServerStartedEvent>(MusicManager::onServerStarted)
@@ -53,7 +52,7 @@ class MuSyncForge {
                 MUSIC_GUI_KEY = KeyMapping(
                     "key.musync.gui",
                     InputConstants.Type.KEYSYM,
-                    GLFW.GLFW_KEY_M,
+                    InputConstants.UNKNOWN.value,
                     "key.categories.musync"
                 )
                 event.register(MUSIC_GUI_KEY)
@@ -61,7 +60,7 @@ class MuSyncForge {
                 MUSIC_SKIP_KEY = KeyMapping(
                     "key.musync.skip",
                     InputConstants.Type.KEYSYM,
-                    GLFW.GLFW_KEY_N,
+                    InputConstants.UNKNOWN.value,
                     "key.categories.musync"
                 )
                 event.register(MUSIC_SKIP_KEY)
@@ -69,7 +68,7 @@ class MuSyncForge {
                 MUSIC_PAUSE_KEY = KeyMapping(
                     "key.musync.pause_resume",
                     InputConstants.Type.KEYSYM,
-                    GLFW.GLFW_KEY_B,
+                    InputConstants.UNKNOWN.value,
                     "key.categories.musync"
                 )
                 event.register(MUSIC_PAUSE_KEY)
@@ -77,7 +76,7 @@ class MuSyncForge {
                 MUSIC_STOP_KEY = KeyMapping(
                     "key.musync.stop",
                     InputConstants.Type.KEYSYM,
-                    GLFW.GLFW_KEY_V,
+                    InputConstants.UNKNOWN.value,
                     "key.categories.musync"
                 )
                 event.register(MUSIC_STOP_KEY)
@@ -131,11 +130,19 @@ class MuSyncForge {
                 }
             }
 
+            //? if >=1.20 {
             MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingIn> { _ ->
+            //?} else {
+            /*MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggedInEvent> { _ ->*/
+            //?}
                 ClientMusicPlayer.musyncActive = true
             }
 
+            //? if >=1.20 {
             MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut> { _ ->
+            //?} else {
+            /*MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggedOutEvent> { _ ->*/
+            //?}
                 ClientMusicPlayer.fullReset()
                 dev.mcrib884.musync.client.ClientTrackManager.reset()
                 dev.mcrib884.musync.client.CustomTrackCache.clear()

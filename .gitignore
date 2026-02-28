@@ -20,4 +20,7 @@ replay_*.log
 /*.jar
 jdks/
 run_build.bat
-run_client.bat
+run_client_1.19.2.bat
+run_client_1.20.1.bat
+logo.png
+logo.png~

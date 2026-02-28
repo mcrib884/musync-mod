@@ -4,7 +4,12 @@ import dev.mcrib884.musync.command.MuSyncCommand
 import dev.mcrib884.musync.network.MusicControlPacket
 import dev.mcrib884.musync.network.PacketHandler
 import net.minecraft.client.Minecraft
+//? if >=1.20 {
 import net.minecraft.client.gui.GuiGraphics
+//?} else {
+/*import com.mojang.blaze3d.vertex.PoseStack
+import net.minecraft.client.gui.GuiComponent*/
+//?}
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
@@ -43,21 +48,40 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         val btnY = panelY + panelH - 26
         val btnW = 70
 
+        //? if >=1.20 {
         addRenderableWidget(Button.builder(Component.literal("\u2190 Back")) {
             Minecraft.getInstance().setScreen(MusicControlScreen())
         }.bounds(panelX + 6, btnY, 50, 18).build())
+        //?} else {
+        /*addRenderableWidget(Button(panelX + 6, btnY, 50, 18, Component.literal("\u2190 Back")) {
+            Minecraft.getInstance().setScreen(MusicControlScreen())
+        })*/
+        //?}
 
+        //? if >=1.20 {
         playBtn = addRenderableWidget(Button.builder(Component.literal("\u25B6 Play Now")) {
             playSelected()
         }.bounds(panelX + panelW - btnW * 2 - 12, btnY, btnW, 18).build())
+        //?} else {
+        /*playBtn = addRenderableWidget(Button(panelX + panelW - btnW * 2 - 12, btnY, btnW, 18, Component.literal("\u25B6 Play Now")) {
+            playSelected()
+        })*/
+        //?}
         playBtn!!.active = false
 
+        //? if >=1.20 {
         queueBtn = addRenderableWidget(Button.builder(Component.literal("+ Queue")) {
             queueSelected()
         }.bounds(panelX + panelW - btnW - 6, btnY, btnW, 18).build())
+        //?} else {
+        /*queueBtn = addRenderableWidget(Button(panelX + panelW - btnW - 6, btnY, btnW, 18, Component.literal("+ Queue")) {
+            queueSelected()
+        })*/
+        //?}
         queueBtn!!.active = false
     }
 
+    //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         renderBackground(graphics)
 
@@ -139,6 +163,89 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
         super.render(graphics, mouseX, mouseY, partialTick)
     }
+    //?} else {
+    /*override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, partialTick: Float) {
+        renderBackground(poseStack)
+
+        GuiComponent.fill(poseStack, panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
+
+        val cx = panelX + panelW / 2
+
+        GuiComponent.drawCenteredString(poseStack, font, "\u266B Track Browser \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
+
+        GuiComponent.drawCenteredString(poseStack, font, "${tracks.size} tracks available", cx, panelY + 20, 0xFF666688.toInt())
+
+        val listY = panelY + 34
+        val listH = visibleRows * rowH
+
+        GuiComponent.fill(poseStack, panelX + 4, listY - 2, panelX + panelW - 4, listY + listH + 2, 0x30000000)
+
+        val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+        scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+
+        for (i in 0 until visibleRows) {
+            val idx = i + scrollOffset
+            if (idx >= tracks.size) break
+
+            val y = listY + i * rowH
+            val (_, displayName) = tracks[idx]
+            val isSelected = idx == selectedIndex
+            val isHovered = mouseX >= panelX + 6 && mouseX <= panelX + panelW - 10 &&
+                    mouseY >= y && mouseY < y + rowH
+
+            val bgColor = when {
+                isSelected -> 0xFF003322.toInt()
+                isHovered -> 0x30FFFFFF
+                i % 2 == 0 -> 0x15FFFFFF
+                else -> 0x00000000
+            }
+            if (bgColor != 0) {
+                GuiComponent.fill(poseStack, panelX + 5, y, panelX + panelW - 5, y + rowH, bgColor)
+            }
+
+            if (isSelected) {
+                GuiComponent.fill(poseStack, panelX + 5, y, panelX + 7, y + rowH, 0xFF00CC66.toInt())
+            }
+
+            val textColor = if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt()
+            val maxNameW = panelW - 24
+            val trimmed = if (font.width(displayName) > maxNameW) {
+                font.plainSubstrByWidth(displayName, maxNameW) + "..."
+            } else displayName
+            GuiComponent.drawString(poseStack, font, trimmed, panelX + 12, y + 4, textColor)
+        }
+
+        if (tracks.size > visibleRows) {
+            val barX = panelX + panelW - 10
+            val barW = 6
+            val barTotalH = listH
+            val thumbH = ((visibleRows.toFloat() / tracks.size) * barTotalH).toInt().coerceAtLeast(10)
+            val thumbY = listY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
+
+            GuiComponent.fill(poseStack, barX, listY, barX + barW, listY + barTotalH, 0xFF222244.toInt())
+
+            val thumbColor = if (draggingScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+            GuiComponent.fill(poseStack, barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
+        }
+
+        val hasSelection = selectedIndex >= 0 && selectedIndex < tracks.size
+        playBtn?.active = hasSelection && isOp
+        queueBtn?.active = hasSelection && isOp
+
+        if (hasSelection) {
+            val (_, selDisplay) = tracks[selectedIndex]
+            GuiComponent.drawCenteredString(poseStack, font, "Selected: $selDisplay", cx, panelY + panelH - 44, 0xFF00CC66.toInt())
+        }
+
+        if (!isOp) {
+            GuiComponent.drawCenteredString(poseStack, font, "\u26A0 View only (OP required)", cx, panelY + panelH - 44, 0xFFFF5555.toInt())
+        }
+
+        super.render(poseStack, mouseX, mouseY, partialTick)
+    }*/
+    //?}
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {

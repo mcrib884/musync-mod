@@ -4,13 +4,20 @@ import dev.mcrib884.musync.network.MusicControlPacket
 import dev.mcrib884.musync.network.MusicStatusPacket
 import dev.mcrib884.musync.network.PacketHandler
 import net.minecraft.client.Minecraft
+//? if >=1.20 {
 import net.minecraft.client.gui.GuiGraphics
+//?} else {
+/*import com.mojang.blaze3d.vertex.PoseStack
+import net.minecraft.client.gui.GuiComponent*/
+//?}
 import net.minecraft.client.gui.components.Button
 import net.minecraft.client.gui.components.EditBox
+//? if >=1.20
 import net.minecraft.client.gui.components.Tooltip
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import net.minecraftforge.network.PacketDistributor
+import dev.mcrib884.musync.entityLevel
 
 class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
@@ -34,6 +41,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var applyBtn: Button? = null
     private var resetBtn: Button? = null
     private var dimSyncBtn: Button? = null
+    private var syncAllBtn: Button? = null
     private var dimLabel: String = "?"
 
     private val isOp: Boolean
@@ -54,11 +62,18 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val btnStartX = panelX + (panelW - totalBtnW) / 2
         val btnY = panelY + 102
 
+        //? if >=1.20 {
         stopBtn = addRenderableWidget(Button.builder(Component.literal("\u25A0 Stop")) {
             sendControl(MusicControlPacket.Action.STOP)
         }.bounds(btnStartX, btnY, btnW, btnH).build())
+        //?} else {
+        /*stopBtn = addRenderableWidget(Button(btnStartX, btnY, btnW, btnH, Component.literal("\u25A0 Stop")) {
+            sendControl(MusicControlPacket.Action.STOP)
+        })*/
+        //?}
         stopBtn!!.active = op
 
+        //? if >=1.20 {
         pauseBtn = addRenderableWidget(Button.builder(Component.literal("\u23F8 Pause")) {
             val status = ClientMusicPlayer.getCurrentStatus()
             if (status != null && status.isPlaying) {
@@ -67,11 +82,27 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 sendControl(MusicControlPacket.Action.RESUME)
             }
         }.bounds(btnStartX + btnW + btnSpacing, btnY, btnW, btnH).build())
+        //?} else {
+        /*pauseBtn = addRenderableWidget(Button(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, Component.literal("\u23F8 Pause")) {
+            val status = ClientMusicPlayer.getCurrentStatus()
+            if (status != null && status.isPlaying) {
+                sendControl(MusicControlPacket.Action.PAUSE)
+            } else {
+                sendControl(MusicControlPacket.Action.RESUME)
+            }
+        })*/
+        //?}
         pauseBtn!!.active = op
 
+        //? if >=1.20 {
         skipBtn = addRenderableWidget(Button.builder(Component.literal("\u23ED Skip")) {
             sendControl(MusicControlPacket.Action.SKIP)
         }.bounds(btnStartX + (btnW + btnSpacing) * 2, btnY, btnW, btnH).build())
+        //?} else {
+        /*skipBtn = addRenderableWidget(Button(btnStartX + (btnW + btnSpacing) * 2, btnY, btnW, btnH, Component.literal("\u23ED Skip")) {
+            sendControl(MusicControlPacket.Action.SKIP)
+        })*/
+        //?}
         skipBtn!!.active = op
 
         val delayY = panelY + 150
@@ -103,43 +134,90 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val applyResetY = delayY + fieldH + 3
         val applyResetTotalW = smallBtnW * 2 + 6
         val applyResetX = panelX + (panelW - applyResetTotalW) / 2
+        //? if >=1.20 {
         applyBtn = addRenderableWidget(Button.builder(Component.literal("Apply")) {
             applyDelay()
         }.bounds(applyResetX, applyResetY, smallBtnW, 16).build())
+        //?} else {
+        /*applyBtn = addRenderableWidget(Button(applyResetX, applyResetY, smallBtnW, 16, Component.literal("Apply")) {
+            applyDelay()
+        })*/
+        //?}
         applyBtn!!.active = op
 
+        //? if >=1.20 {
         resetBtn = addRenderableWidget(Button.builder(Component.literal("Reset")) {
             sendControl(MusicControlPacket.Action.SET_DELAY, trackId = "reset")
             minDelayField!!.value = ""
             maxDelayField!!.value = ""
         }.bounds(applyResetX + smallBtnW + 6, applyResetY, smallBtnW, 16).build())
+        //?} else {
+        /*resetBtn = addRenderableWidget(Button(applyResetX + smallBtnW + 6, applyResetY, smallBtnW, 16, Component.literal("Reset")) {
+            sendControl(MusicControlPacket.Action.SET_DELAY, trackId = "reset")
+            minDelayField!!.value = ""
+            maxDelayField!!.value = ""
+        })*/
+        //?}
         resetBtn!!.active = op
 
         val navY = panelY + panelH - 26
         val navBtnW = 70
+        //? if >=1.20 {
         addRenderableWidget(Button.builder(Component.literal("\u266B Playlist")) {
             Minecraft.getInstance().setScreen(PlaylistScreen())
         }.bounds(panelX + panelW / 2 - navBtnW - 3, navY, navBtnW, 18).build())
+        //?} else {
+        /*addRenderableWidget(Button(panelX + panelW / 2 - navBtnW - 3, navY, navBtnW, 18, Component.literal("\u266B Playlist")) {
+            Minecraft.getInstance().setScreen(PlaylistScreen())
+        })*/
+        //?}
 
+        //? if >=1.20 {
         addRenderableWidget(Button.builder(Component.literal("\u266A Tracks")) {
             Minecraft.getInstance().setScreen(TrackBrowserScreen())
         }.bounds(panelX + panelW / 2 + 3, navY, navBtnW, 18).build())
+        //?} else {
+        /*addRenderableWidget(Button(panelX + panelW / 2 + 3, navY, navBtnW, 18, Component.literal("\u266A Tracks")) {
+            Minecraft.getInstance().setScreen(TrackBrowserScreen())
+        })*/
+        //?}
+
+        val syncSize = 18
+        //? if >=1.20 {
+        syncAllBtn = addRenderableWidget(Button.builder(Component.literal("\u00A7l\u21C4")) {
+            sendControl(MusicControlPacket.Action.FORCE_SYNC_ALL)
+        }.bounds(panelX + 4, panelY + 4, syncSize, syncSize)
+         .tooltip(Tooltip.create(Component.literal("Resync all clients")))
+         .build())
+        //?} else {
+        /*syncAllBtn = addRenderableWidget(Button(panelX + 4, panelY + 4, syncSize, syncSize, Component.literal("\u00A7l\u21C4")) {
+            sendControl(MusicControlPacket.Action.FORCE_SYNC_ALL)
+        })*/
+        //?}
+        syncAllBtn!!.active = op
 
         val mc = Minecraft.getInstance()
-        val playerDim = mc.player?.level()?.dimension()?.location()?.toString()
+        val playerDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
         val isInNonOverworld = playerDim != null && playerDim != "minecraft:overworld"
         if (isInNonOverworld) {
             dimLabel = getDimLabel(playerDim!!)
             val tooltipDim = getDimDisplayName(playerDim)
             val nSize = 18
+            //? if >=1.20 {
             dimSyncBtn = addRenderableWidget(Button.builder(Component.literal(dimLabel)) {
                 sendControl(MusicControlPacket.Action.TOGGLE_NETHER_SYNC)
             }.bounds(panelX + panelW - nSize - 4, panelY + 4, nSize, nSize)
-             .tooltip(Tooltip.create(Component.literal("Sync overworld music in $tooltipDim")))
+             .tooltip(Tooltip.create(Component.literal("$tooltipDim — Sync overworld music")))
              .build())
+            //?} else {
+            /*dimSyncBtn = addRenderableWidget(Button(panelX + panelW - nSize - 4, panelY + 4, nSize, nSize, Component.literal(dimLabel)) {
+                sendControl(MusicControlPacket.Action.TOGGLE_NETHER_SYNC)
+            })*/
+            //?}
         }
     }
 
+    //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
         renderBackground(graphics)
 
@@ -264,6 +342,132 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         super.render(graphics, mouseX, mouseY, partialTick)
     }
+    //?} else {
+    /*override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, partialTick: Float) {
+        renderBackground(poseStack)
+
+        GuiComponent.fill(poseStack, panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
+
+        val cx = panelX + panelW / 2
+
+        GuiComponent.drawCenteredString(poseStack, font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
+
+        val status = ClientMusicPlayer.getCurrentStatus()
+        val position = if (status != null && status.isPlaying && status.currentTrack != null) {
+            ClientMusicPlayer.getCurrentPositionMs()
+        } else {
+            status?.currentPositionMs ?: 0
+        }
+        val duration = status?.durationMs ?: 0
+
+        val trackText = if (status?.currentTrack != null) {
+            if (status.resolvedName.isNotEmpty()) {
+                formatOggName(status.resolvedName)
+            } else {
+                formatSoundEvent(status.currentTrack)
+            }
+        } else {
+            "No track"
+        }
+
+        GuiComponent.drawCenteredString(poseStack, font, trackText, cx, panelY + 26, 0xFFFFFF)
+
+        if (status?.currentTrack != null && status.resolvedName.isNotEmpty()) {
+            GuiComponent.drawCenteredString(poseStack, font, formatSoundEvent(status.currentTrack), cx, panelY + 38, 0xFF777799.toInt())
+        }
+
+        val statusText = when {
+            status == null -> "\u23F9 Stopped"
+            status.isPlaying -> "\u25B6 Playing"
+            status.currentTrack != null -> "\u23F8 Paused"
+            status.waitingForNextTrack -> {
+                val ticksLeft = (status.nextMusicDelayTicks - status.ticksSinceLastMusic).coerceAtLeast(0)
+                "\u23F3 Next in ${formatTicksShort(ticksLeft)}"
+            }
+            else -> "\u23F9 Stopped"
+        }
+        val statusColor = when {
+            status != null && status.isPlaying -> 0xFF55FF55.toInt()
+            status != null && status.waitingForNextTrack -> 0xFFFFAA00.toInt()
+            else -> 0xFFAAAAAA.toInt()
+        }
+        GuiComponent.drawCenteredString(poseStack, font, statusText, cx, panelY + 52, statusColor)
+
+        val progress = if (duration > 0) (position.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+        val filledW = (barW * progress).toInt()
+
+        GuiComponent.fill(poseStack, barX, barY, barX + barW, barY + barH, 0xFF222244.toInt())
+        if (filledW > 0) {
+            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH / 2, 0xFF00EE88.toInt())
+        }
+        GuiComponent.fill(poseStack, barX - 1, barY - 1, barX + barW + 1, barY, 0xFF333355.toInt())
+        GuiComponent.fill(poseStack, barX - 1, barY + barH, barX + barW + 1, barY + barH + 1, 0xFF333355.toInt())
+        GuiComponent.fill(poseStack, barX - 1, barY, barX, barY + barH, 0xFF333355.toInt())
+        GuiComponent.fill(poseStack, barX + barW, barY, barX + barW + 1, barY + barH, 0xFF333355.toInt())
+
+        if (filledW > 0 && duration > 0) {
+            val headX = barX + filledW
+            GuiComponent.fill(poseStack, headX - 1, barY - 1, headX + 1, barY + barH + 1, 0xFFFFFFFF.toInt())
+        }
+
+        val posStr = formatTime(position)
+        val durStr = if (duration > 0) formatTime(duration) else "--:--"
+        GuiComponent.drawCenteredString(poseStack, font, "$posStr / $durStr", cx, barY + barH + 3, 0xFF999999.toInt())
+
+        if (status != null && status.isPlaying) {
+            pauseBtn?.message = Component.literal("\u23F8 Pause")
+        } else {
+            pauseBtn?.message = Component.literal("\u25B6 Play")
+        }
+
+        if (dimSyncBtn != null) {
+            val syncing = status?.syncOverworld == true
+            dimSyncBtn!!.message = Component.literal(if (syncing) "\u00A7aO" else dimLabel)
+        }
+
+        val modeText = when (status?.mode) {
+            MusicStatusPacket.PlayMode.AUTONOMOUS -> "Auto"
+            MusicStatusPacket.PlayMode.PLAYLIST -> "Playlist"
+            MusicStatusPacket.PlayMode.SINGLE_TRACK -> "Single"
+            else -> "---"
+        }
+        GuiComponent.drawCenteredString(poseStack, font, "Mode: $modeText", cx, panelY + 128, 0xFF666688.toInt())
+
+        val delayRenderY = panelY + 152
+        val delayLabelWR = font.width("Delay:") + 4
+        val dashWR = font.width(" - ") + 2
+        val fieldWR = 50
+        val ticksLabelWR = font.width("ticks")
+        val totalDelayWR = delayLabelWR + fieldWR + dashWR + fieldWR + 4 + ticksLabelWR
+        val delayRenderX = panelX + (panelW - totalDelayWR) / 2
+
+        GuiComponent.drawString(poseStack, font, "Delay:", delayRenderX, delayRenderY, 0xFF888888.toInt())
+        GuiComponent.drawString(poseStack, font, "-", delayRenderX + delayLabelWR + fieldWR + (dashWR - font.width("-")) / 2, delayRenderY, 0xFF888888.toInt())
+        GuiComponent.drawString(poseStack, font, "ticks", delayRenderX + delayLabelWR + fieldWR + dashWR + fieldWR + 4, delayRenderY, 0xFF666666.toInt())
+
+        val activeDelayY = panelY + 190
+        if (status != null && status.customMinDelay >= 0 && status.customMaxDelay >= 0) {
+            val dText = "Active: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
+            GuiComponent.drawCenteredString(poseStack, font, dText, cx, activeDelayY, 0xFF55AA77.toInt())
+        } else {
+            GuiComponent.drawCenteredString(poseStack, font, "Active: Vanilla defaults (10m 0s - 20m 0s)", cx, activeDelayY, 0xFF666666.toInt())
+        }
+
+        if (!isOp) {
+            GuiComponent.drawCenteredString(poseStack, font, "\u26A0 View only (OP required)", cx, panelY + panelH - 42, 0xFFFF5555.toInt())
+        }
+
+        val queueSize = status?.queue?.size ?: 0
+        if (queueSize > 0) {
+            GuiComponent.drawCenteredString(poseStack, font, "Queue: $queueSize track${if (queueSize > 1) "s" else ""}", cx, panelY + 138, 0xFF666688.toInt())
+        }
+
+        super.render(poseStack, mouseX, mouseY, partialTick)
+    }*/
+    //?}
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (isOp && button == 0 && mouseX >= barX && mouseX <= barX + barW && mouseY >= barY - 2 && mouseY <= barY + barH + 2) {
@@ -384,7 +588,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     )
 
     private fun formatOggName(path: String): String {
-        return OGG_NAMES[path] ?: path.substringAfterLast("/").replace("_", " ").replaceFirstChar { it.uppercase() }
+        val cleanPath = if (path.contains(":")) path.substringAfter(":") else path
+        return OGG_NAMES[cleanPath] ?: cleanPath.substringAfterLast("/").replace("_", " ").replaceFirstChar { it.uppercase() }
     }
 
     private fun formatSoundEvent(id: String): String {

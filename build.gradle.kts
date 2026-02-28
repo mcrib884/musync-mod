@@ -53,24 +53,17 @@ loom {
 	}
 }
 
-val nonModImplementation: Configuration by configurations.creating
-
-configurations {
-	implementation.get().extendsFrom(nonModImplementation)
-	include.get().extendsFrom(nonModImplementation)
-	findByName("forgeRuntimeLibrary")?.extendsFrom(nonModImplementation)
-}
-
 repositories {
 	mavenCentral()
 	maven("https://maven.architectury.dev/")
 	maven("https://maven.minecraftforge.net/")
 	maven("https://maven.parchmentmc.org/")
+	maven("https://thedarkcolour.github.io/KotlinForForge/")
 }
 
 extensions.configure<KotlinJvmProjectExtension>("kotlin") {
 	sourceSets.named("main") {
-		kotlin.srcDir("src/$loaderPlatform/kotlin")
+		kotlin.srcDir(rootProject.file("src/$loaderPlatform/kotlin"))
 	}
 }
 
@@ -88,18 +81,7 @@ dependencies {
 
 	"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
 
-	nonModImplementation(kotlin("stdlib"))
-	nonModImplementation(kotlin("stdlib-jdk8"))
-	nonModImplementation(kotlin("stdlib-jdk7"))
-	nonModImplementation(kotlin("reflect", version = "2.2.0"))
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.10.2")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-serialization-core:1.8.1")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.8.1")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.2")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-io-core:0.7.0")
-	nonModImplementation("org.jetbrains.kotlinx:kotlinx-io-bytestring:0.7.0")
+	implementation("thedarkcolour:kotlinforforge:3.12.0")
 }
 
 val javaVersion: String by project
@@ -111,9 +93,11 @@ tasks {
 		val modLicense: String by project
 		val modAuthors: String by project
 
+		val packFormat: String by project
 		val props = mutableMapOf(
 			"java_version" to javaVersion,
 			"minecraft_version" to mcVersion,
+			"pack_format" to packFormat,
 
 			"mod_version" to modVersion,
 			"mod_group" to modGroup,

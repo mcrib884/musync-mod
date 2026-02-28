@@ -28,7 +28,11 @@ public class MinecraftMixin {
         Minecraft self = (Minecraft) (Object) this;
         LocalPlayer player = self.player;
 
+        //? if >=1.20 {
         if (player == null || player.level() == null) {
+        //?} else {
+        /*if (player == null || player.level == null) {*/
+        //?}
             return;
         }
 
@@ -43,11 +47,19 @@ public class MinecraftMixin {
         outer:
         for (int cx = -chunkRange; cx <= chunkRange; cx++) {
             for (int cz = -chunkRange; cz <= chunkRange; cz++) {
+                //? if >=1.20 {
                 var chunk = player.level().getChunk(playerChunkX + cx, playerChunkZ + cz);
+                //?} else {
+                /*var chunk = player.level.getChunk(playerChunkX + cx, playerChunkZ + cz);*/
+                //?}
                 for (var blockEntity : chunk.getBlockEntities().values()) {
                     if (blockEntity instanceof JukeboxBlockEntity jukebox) {
                         if (jukebox.getBlockPos().closerThan(playerPos, range)) {
+                            //? if >=1.20 {
                             if (!jukebox.getItem(0).isEmpty()) {
+                            //?} else {
+                            /*if (!jukebox.getRecord().isEmpty()) {*/
+                            //?}
                                 nearJukebox = true;
                                 break outer;
                             }

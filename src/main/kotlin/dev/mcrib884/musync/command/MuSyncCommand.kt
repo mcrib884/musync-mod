@@ -161,10 +161,17 @@ object MuSyncCommand {
 
                                     if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(input)) {
                                         dev.mcrib884.musync.server.MusicManager.playTrack("custom:$input")
+                                        //? if >=1.20 {
                                         ctx.source.sendSuccess(
                                             { Component.literal("Now playing custom: $input") },
                                             true
                                         )
+                                        //?} else {
+                                        /*ctx.source.sendSuccess(
+                                            Component.literal("Now playing custom: $input"),
+                                            true
+                                        )*/
+                                        //?}
                                         return@executes 1
                                     }
 
@@ -174,16 +181,30 @@ object MuSyncCommand {
                                         if (trackValue.contains("|")) {
                                             val parts = trackValue.split("|", limit = 2)
                                             dev.mcrib884.musync.server.MusicManager.playTrack(parts[0], parts[1])
+                                            //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Now playing: ${formatOggName(parts[1])}") },
                                                 true
                                             )
+                                            //?} else {
+                                            /*ctx.source.sendSuccess(
+                                                Component.literal("Now playing: ${formatOggName(parts[1])}"),
+                                                true
+                                            )*/
+                                            //?}
                                         } else {
                                             dev.mcrib884.musync.server.MusicManager.playTrack(trackValue)
+                                            //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Now playing: ${formatTrackName(trackValue)}") },
                                                 true
                                             )
+                                            //?} else {
+                                            /*ctx.source.sendSuccess(
+                                                Component.literal("Now playing: ${formatTrackName(trackValue)}"),
+                                                true
+                                            )*/
+                                            //?}
                                         }
                                         return@executes 1
                                     }
@@ -191,10 +212,17 @@ object MuSyncCommand {
                                     val resLoc = ResourceLocation.tryParse(input)
                                     if (resLoc != null && ForgeRegistries.SOUND_EVENTS.containsKey(resLoc)) {
                                         dev.mcrib884.musync.server.MusicManager.playTrack(resLoc.toString())
+                                        //? if >=1.20 {
                                         ctx.source.sendSuccess(
                                             { Component.literal("Now playing: ${formatTrackName(resLoc.toString())}") },
                                             true
                                         )
+                                        //?} else {
+                                        /*ctx.source.sendSuccess(
+                                            Component.literal("Now playing: ${formatTrackName(resLoc.toString())}"),
+                                            true
+                                        )*/
+                                        //?}
                                         return@executes 1
                                     }
 
@@ -210,10 +238,17 @@ object MuSyncCommand {
                         .executes { ctx ->
                             if (isDownloading(ctx)) return@executes 0
                             dev.mcrib884.musync.server.MusicManager.stopMusic()
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Music stopped") },
                                 true
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Music stopped"),
+                                true
+                            )*/
+                            //?}
                             1
                         }
                 )
@@ -222,10 +257,17 @@ object MuSyncCommand {
                         .executes { ctx ->
                             if (isDownloading(ctx)) return@executes 0
                             dev.mcrib884.musync.server.MusicManager.skipTrack()
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Skipping to next track") },
                                 true
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Skipping to next track"),
+                                true
+                            )*/
+                            //?}
                             1
                         }
                 )
@@ -234,10 +276,17 @@ object MuSyncCommand {
                         .executes { ctx ->
                             if (isDownloading(ctx)) return@executes 0
                             dev.mcrib884.musync.server.MusicManager.pauseMusic()
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Music paused") },
                                 true
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Music paused"),
+                                true
+                            )*/
+                            //?}
                             1
                         }
                 )
@@ -246,10 +295,17 @@ object MuSyncCommand {
                         .executes { ctx ->
                             if (isDownloading(ctx)) return@executes 0
                             dev.mcrib884.musync.server.MusicManager.resumeMusic()
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Music resumed") },
                                 true
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Music resumed"),
+                                true
+                            )*/
+                            //?}
                             1
                         }
                 )
@@ -264,10 +320,17 @@ object MuSyncCommand {
 
                                     if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(input)) {
                                         dev.mcrib884.musync.server.MusicManager.addToQueue("custom:$input")
+                                        //? if >=1.20 {
                                         ctx.source.sendSuccess(
                                             { Component.literal("Added to queue: $input (custom)") },
                                             true
                                         )
+                                        //?} else {
+                                        /*ctx.source.sendSuccess(
+                                            Component.literal("Added to queue: $input (custom)"),
+                                            true
+                                        )*/
+                                        //?}
                                         return@executes 1
                                     }
 
@@ -276,16 +339,30 @@ object MuSyncCommand {
                                         if (trackValue.contains("|")) {
                                             val parts = trackValue.split("|", limit = 2)
                                             dev.mcrib884.musync.server.MusicManager.addToQueue(parts[0])
+                                            //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Added to queue: ${formatOggName(parts[1])}") },
                                                 true
                                             )
+                                            //?} else {
+                                            /*ctx.source.sendSuccess(
+                                                Component.literal("Added to queue: ${formatOggName(parts[1])}"),
+                                                true
+                                            )*/
+                                            //?}
                                         } else {
                                             dev.mcrib884.musync.server.MusicManager.addToQueue(trackValue)
+                                            //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Added to queue: ${formatTrackName(trackValue)}") },
                                                 true
                                             )
+                                            //?} else {
+                                            /*ctx.source.sendSuccess(
+                                                Component.literal("Added to queue: ${formatTrackName(trackValue)}"),
+                                                true
+                                            )*/
+                                            //?}
                                         }
                                         return@executes 1
                                     }
@@ -293,10 +370,17 @@ object MuSyncCommand {
                                     val resLoc = ResourceLocation.tryParse(input)
                                     if (resLoc != null && ForgeRegistries.SOUND_EVENTS.containsKey(resLoc)) {
                                         dev.mcrib884.musync.server.MusicManager.addToQueue(resLoc.toString())
+                                        //? if >=1.20 {
                                         ctx.source.sendSuccess(
                                             { Component.literal("Added to queue: ${formatTrackName(resLoc.toString())}") },
                                             true
                                         )
+                                        //?} else {
+                                        /*ctx.source.sendSuccess(
+                                            Component.literal("Added to queue: ${formatTrackName(resLoc.toString())}"),
+                                            true
+                                        )*/
+                                        //?}
                                         return@executes 1
                                     }
 
@@ -325,26 +409,47 @@ object MuSyncCommand {
                             val custMin = status["customMinDelay"] as Int
                             val custMax = status["customMaxDelay"] as Int
 
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("========== MuSync ==========") },
                                 false
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("========== MuSync =========="),
+                                false
+                            )*/
+                            //?}
 
                             val trackDisplay = when {
                                 track == "None" -> "No track"
                                 resolvedName.isNotEmpty() -> formatOggName(resolvedName)
                                 else -> formatTrackName(track)
                             }
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Track: $trackDisplay") },
                                 false
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Track: $trackDisplay"),
+                                false
+                            )*/
+                            //?}
 
                             if (track != "None" && resolvedName.isNotEmpty()) {
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Pool: ${formatTrackName(track)}") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Pool: ${formatTrackName(track)}"),
+                                    false
+                                )*/
+                                //?}
                             }
 
                             val statusText = when {
@@ -353,26 +458,47 @@ object MuSyncCommand {
                                 !playing -> "Stopped"
                                 else -> "Playing"
                             }
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Status: $statusText") },
                                 false
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Status: $statusText"),
+                                false
+                            )*/
+                            //?}
 
                             if (track != "None" && (playing || paused)) {
                                 if (duration > 0) {
                                     val progressBar = createProgressBar(position, duration, 20)
                                     val posStr = formatTime(position)
                                     val durStr = formatTime(duration)
+                                    //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("[$progressBar] $posStr / $durStr") },
                                         false
                                     )
+                                    //?} else {
+                                    /*ctx.source.sendSuccess(
+                                        Component.literal("[$progressBar] $posStr / $durStr"),
+                                        false
+                                    )*/
+                                    //?}
                                 } else {
                                     val posStr = formatTime(position)
+                                    //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("$posStr / Loading...") },
                                         false
                                     )
+                                    //?} else {
+                                    /*ctx.source.sendSuccess(
+                                        Component.literal("$posStr / Loading..."),
+                                        false
+                                    )*/
+                                    //?}
                                 }
                             }
 
@@ -381,14 +507,28 @@ object MuSyncCommand {
                                 val elapsedSec = ticksElapsed / 20.0
                                 val totalSec = ticksTotal / 20.0
                                 val remainSec = ticksRemaining / 20.0
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Delay: ${formatTickTime(ticksElapsed)} / ${formatTickTime(ticksTotal)} (${formatTickTime(ticksRemaining)} remaining)") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Delay: ${formatTickTime(ticksElapsed)} / ${formatTickTime(ticksTotal)} (${formatTickTime(ticksRemaining)} remaining)"),
+                                    false
+                                )*/
+                                //?}
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("       ($ticksElapsed / $ticksTotal ticks, $ticksRemaining left)") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("       ($ticksElapsed / $ticksTotal ticks, $ticksRemaining left)"),
+                                    false
+                                )*/
+                                //?}
                             }
 
                             val modeDisplay = when (mode) {
@@ -396,41 +536,102 @@ object MuSyncCommand {
                                 "PLAYLIST" -> "Playlist"
                                 else -> mode
                             }
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("Mode: $modeDisplay") },
                                 false
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Mode: $modeDisplay"),
+                                false
+                            )*/
+                            //?}
 
                             if (custMin >= 0 && custMax >= 0) {
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Custom delay: $custMin-$custMax ticks (${formatTickTime(custMin)}-${formatTickTime(custMax)})") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Custom delay: $custMin-$custMax ticks (${formatTickTime(custMin)}-${formatTickTime(custMax)})"),
+                                    false
+                                )*/
+                                //?}
                             }
 
                             if (queue.isNotEmpty()) {
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Queue (${queue.size}):") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Queue (${queue.size}):"),
+                                    false
+                                )*/
+                                //?}
                                 queue.take(5).forEachIndexed { i, t ->
+                                    //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("  ${i + 1}. ${formatTrackName(t.toString())}") },
                                         false
                                     )
+                                    //?} else {
+                                    /*ctx.source.sendSuccess(
+                                        Component.literal("  ${i + 1}. ${formatTrackName(t.toString())}"),
+                                        false
+                                    )*/
+                                    //?}
                                 }
                                 if (queue.size > 5) {
+                                    //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("  ... and ${queue.size - 5} more") },
                                         false
                                     )
+                                    //?} else {
+                                    /*ctx.source.sendSuccess(
+                                        Component.literal("  ... and ${queue.size - 5} more"),
+                                        false
+                                    )*/
+                                    //?}
                                 }
                             }
 
+                            //? if >=1.20 {
                             ctx.source.sendSuccess(
                                 { Component.literal("=============================") },
                                 false
                             )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("============================="),
+                                false
+                            )*/
+                            //?}
+                            1
+                        }
+                )
+                .then(
+                    Commands.literal("sync")
+                        .executes { ctx ->
+                            if (isDownloading(ctx)) return@executes 0
+                            dev.mcrib884.musync.server.MusicManager.forceSyncAll()
+                            //? if >=1.20 {
+                            ctx.source.sendSuccess(
+                                { Component.literal("Resynced all clients") },
+                                true
+                            )
+                            //?} else {
+                            /*ctx.source.sendSuccess(
+                                Component.literal("Resynced all clients"),
+                                true
+                            )*/
+                            //?}
                             1
                         }
                 )
@@ -441,10 +642,17 @@ object MuSyncCommand {
                                 .executes { ctx ->
                                     if (isDownloading(ctx)) return@executes 0
                                     dev.mcrib884.musync.server.MusicManager.resetCustomDelay()
+                                    //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("Delay reset to vanilla defaults (per-pool timing)") },
                                         true
                                     )
+                                    //?} else {
+                                    /*ctx.source.sendSuccess(
+                                        Component.literal("Delay reset to vanilla defaults (per-pool timing)"),
+                                        true
+                                    )*/
+                                    //?}
                                     1
                                 }
                         )
@@ -463,10 +671,17 @@ object MuSyncCommand {
                                                 return@executes 0
                                             }
                                             dev.mcrib884.musync.server.MusicManager.setCustomDelay(min, max)
+                                            //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Custom delay set: $min-$max ticks (${formatTickTime(min)}-${formatTickTime(max)})") },
                                                 true
                                             )
+                                            //?} else {
+                                            /*ctx.source.sendSuccess(
+                                                Component.literal("Custom delay set: $min-$max ticks (${formatTickTime(min)}-${formatTickTime(max)})"),
+                                                true
+                                            )*/
+                                            //?}
                                             1
                                         }
                                 )
@@ -476,15 +691,29 @@ object MuSyncCommand {
                             val custMin = status["customMinDelay"] as Int
                             val custMax = status["customMaxDelay"] as Int
                             if (custMin >= 0 && custMax >= 0) {
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Current custom delay: $custMin-$custMax ticks (${formatTickTime(custMin)}-${formatTickTime(custMax)})") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Current custom delay: $custMin-$custMax ticks (${formatTickTime(custMin)}-${formatTickTime(custMax)})"),
+                                    false
+                                )*/
+                                //?}
                             } else {
+                                //? if >=1.20 {
                                 ctx.source.sendSuccess(
                                     { Component.literal("Using vanilla defaults (per-pool timing). Use /musync delay <min> <max> to override.") },
                                     false
                                 )
+                                //?} else {
+                                /*ctx.source.sendSuccess(
+                                    Component.literal("Using vanilla defaults (per-pool timing). Use /musync delay <min> <max> to override."),
+                                    false
+                                )*/
+                                //?}
                             }
                             1
                         }
@@ -598,6 +827,14 @@ object MuSyncCommand {
     fun getAllTracksForBrowser(): List<Pair<String, String>> {
         val result = mutableListOf<Pair<String, String>>()
 
+        val knownSpecificSounds = mutableSetOf<String>()
+        for (value in TRACK_MAP.values) {
+            if (value.contains("|")) {
+                val oggPath = value.split("|", limit = 2)[1]
+                knownSpecificSounds.add("minecraft:$oggPath")
+            }
+        }
+
         for (key in TRACK_MAP.keys) {
             val displayName = key.replace("_", " ").replaceFirstChar { it.uppercase() }
             result.add(key to displayName)
@@ -613,6 +850,37 @@ object MuSyncCommand {
                 result.add(fullId to displayName)
             }
         }
+
+        try {
+            val mc = net.minecraft.client.Minecraft.getInstance()
+            val soundManager = mc.soundManager
+            ForgeRegistries.SOUND_EVENTS.keys.forEach { loc ->
+                if (!loc.path.contains("music") && !loc.path.startsWith("music_disc.")) return@forEach
+                val fullEventId = loc.toString()
+                val poolName = DISPLAY_NAMES[fullEventId] ?: formatDiscoveredTrackName(fullEventId)
+
+                try {
+                    val events = soundManager.getSoundEvent(loc) ?: return@forEach
+                    val soundList = events.list
+                    for (weighted in soundList) {
+                        val sound = weighted.getSound(net.minecraft.util.RandomSource.create())
+                        if (sound.type != net.minecraft.client.resources.sounds.Sound.Type.FILE) continue
+                        val soundLoc = sound.location
+                        val qualifiedPath = "${soundLoc.namespace}:${soundLoc.path}"
+
+                        if (qualifiedPath in knownSpecificSounds) continue
+
+                        val key = "$fullEventId|$qualifiedPath"
+                        val friendlyOgg = soundLoc.path.substringAfterLast("/")
+                            .replace("_", " ").replaceFirstChar { it.uppercase() }
+                        val prefix = if (soundLoc.namespace != "minecraft") "[${soundLoc.namespace}] " else ""
+                        val displayName = "$prefix$friendlyOgg ($poolName)"
+                        result.add(key to displayName)
+                        knownSpecificSounds.add(qualifiedPath)
+                    }
+                } catch (_: Exception) { }
+            }
+        } catch (_: Exception) { }
 
         try {
             dev.mcrib884.musync.client.ClientTrackManager.getServerCustomTrackNames().forEach { name ->

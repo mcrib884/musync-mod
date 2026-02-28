@@ -1,4 +1,4 @@
-modLoader = "javafml"
+modLoader = "kotlinforforge"
 loaderVersion = "*"
 issueTrackerURL = "https://github.com/ThePandaOliver/Multiloader-Template/issues"
 license = "${mod_license}"
@@ -9,7 +9,7 @@ version = "${mod_version}"
 displayName = "${mod_name}"
 authors = "${mod_authors}"
 description = "${mod_description}"
-logoFile = "assets/${mod_id}/icon.png"
+logoFile = "icon.png"
 
 [[dependencies."${mod_id}"]]
 modId = "forge"
@@ -22,6 +22,13 @@ side = "BOTH"
 modId = "minecraft"
 mandatory = true
 versionRange = "[${minecraft_version},)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies."${mod_id}"]]
+modId = "kotlinforforge"
+mandatory = true
+versionRange = "[3.0.0,)"
 ordering = "NONE"
 side = "BOTH"
 
