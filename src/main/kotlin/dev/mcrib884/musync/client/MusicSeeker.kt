@@ -6,6 +6,8 @@ import org.lwjgl.openal.AL10
 
 object MusicSeeker {
 
+    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
+
     fun pauseSound(instance: SoundInstance): Boolean {
         return try {
             val soundManager = Minecraft.getInstance().soundManager
@@ -16,15 +18,15 @@ object MusicSeeker {
                     val sourceId = channel.source
                     PausedSourceTracker.markPaused(sourceId)
                     AL10.alSourcePause(sourceId)
-                    println("[MuSync] Channel paused (source=$sourceId)")
+                    logger.debug("Channel paused (source=$sourceId)")
                 }
                 true
             } else {
-                println("[MuSync] No channel found for sound instance")
+                logger.debug("No channel found for sound instance")
                 false
             }
         } catch (e: Exception) {
-            println("[MuSync] Error pausing channel: ${e.message}")
+            logger.error("Error pausing channel: ${e.message}")
             false
         }
     }
@@ -39,15 +41,15 @@ object MusicSeeker {
                     val sourceId = channel.source
                     PausedSourceTracker.markResumed(sourceId)
                     AL10.alSourcePlay(sourceId)
-                    println("[MuSync] Channel resumed (source=$sourceId)")
+                    logger.debug("Channel resumed (source=$sourceId)")
                 }
                 true
             } else {
-                println("[MuSync] No channel found for sound instance (may have been cleaned up)")
+                logger.debug("No channel found for sound instance (may have been cleaned up)")
                 false
             }
         } catch (e: Exception) {
-            println("[MuSync] Error resuming channel: ${e.message}")
+            logger.error("Error resuming channel: ${e.message}")
             false
         }
     }

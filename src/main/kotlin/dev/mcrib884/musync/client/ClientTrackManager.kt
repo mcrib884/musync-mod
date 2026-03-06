@@ -8,6 +8,18 @@ import java.io.File
 
 object ClientTrackManager {
 
+    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
+    private val SAFE_NAME = Regex("^[a-z0-9_\\-]+$")
+
+    private fun sanitizeName(name: String): String? {
+        val cleaned = name.lowercase().replace(" ", "_")
+        if (!SAFE_NAME.matches(cleaned)) {
+            logger.warn("Rejected unsafe track name: $name")
+            return null
+        }
+        return cleaned
+    }
+
     private var serverManifest: List<Pair<String, Int>> = emptyList()
 
     var tracksToDownload: List<Pair<String, Int>> = emptyList()
@@ -70,7 +82,7 @@ object ClientTrackManager {
 
         if (missing.isEmpty()) {
 
-            println("[MuSync] All ${manifest.size} custom tracks are synced")
+            logger.info("All ${manifest.size} custom tracks are synced")
             cacheAllLocalTracks(manifest)
             isDownloading = false
             downloadComplete = true
@@ -86,7 +98,7 @@ object ClientTrackManager {
         isDownloading = true
         downloadComplete = false
 
-        println("[MuSync] Need to download ${missing.size} custom tracks (${formatSize(totalBytesToDownload)})")
+        logger.info("Need to download ${missing.size} custom tracks (${formatSize(totalBytesToDownload)})")
 
         val requestNames = missing.map { it.first }
         PacketHandler.INSTANCE.send(
@@ -117,7 +129,7 @@ object ClientTrackManager {
 
                 isDownloading = false
                 downloadComplete = true
-                println("[MuSync] All custom tracks downloaded and synced!")
+                logger.info("All custom tracks downloaded and synced!")
 
                 cacheAllLocalTracks(serverManifest)
 
@@ -132,6 +144,11 @@ object ClientTrackManager {
     }
 
     private fun saveTrackToDisk(trackName: String, data: ByteArray) {
+        val safeName = sanitizeName(trackName)
+        if (safeName == null) {
+            logger.warn("Refusing to save track with unsafe name: $trackName")
+            return
+        }
         try {
             val folder = getLocalFolder()
             if (!folder.exists()) folder.mkdirs()
@@ -145,11 +162,16 @@ object ClientTrackManager {
                 }
             } else "ogg"
 
-            val file = File(folder, "$trackName.$extension")
+            val file = File(folder, "$safeName.$extension")
+            val canonical = file.canonicalPath
+            if (!canonical.startsWith(folder.canonicalPath)) {
+                logger.error("Path traversal detected for track: $trackName")
+                return
+            }
             file.writeBytes(data)
-            println("[MuSync] Saved custom track to disk: ${file.name} (${data.size} bytes)")
+            logger.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
         } catch (e: Exception) {
-            println("[MuSync] Failed to save track $trackName: ${e.message}")
+            logger.error("Failed to save track $trackName: ${e.message}")
         }
     }
 
@@ -171,9 +193,9 @@ object ClientTrackManager {
                 try {
                     val bytes = file.readBytes()
                     CustomTrackCache.put(name, bytes)
-                    println("[MuSync] Cached local track: $name (${bytes.size} bytes)")
+                    logger.info("Cached local track: $name (${bytes.size} bytes)")
                 } catch (e: Exception) {
-                    println("[MuSync] Failed to cache local track $name: ${e.message}")
+                    logger.error("Failed to cache local track $name: ${e.message}")
                 }
             }
         }

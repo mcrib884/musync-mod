@@ -10,6 +10,8 @@ import java.nio.ByteBuffer
 
 object OggDurationReader {
 
+    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
+
     fun getDurationMs(soundLocation: ResourceLocation): Long {
         var buffer: ByteBuffer? = null
         try {
@@ -27,7 +29,7 @@ object OggDurationReader {
                 val error = stack.mallocInt(1)
                 val handle = STBVorbis.stb_vorbis_open_memory(buffer, error, null)
                 if (handle == 0L) {
-                    println("[MuSync] STBVorbis error ${error[0]} for $fileLoc")
+                    logger.warn("STBVorbis error ${error[0]} for $fileLoc")
                     return -1
                 }
 
@@ -42,7 +44,7 @@ object OggDurationReader {
                 return (totalSamples.toLong() * 1000L) / sampleRate.toLong()
             }
         } catch (e: Exception) {
-            println("[MuSync] Error reading OGG duration: ${e.message}")
+            logger.error("Error reading OGG duration: ${e.message}")
             return -1
         } finally {
             buffer?.let { MemoryUtil.memFree(it) }

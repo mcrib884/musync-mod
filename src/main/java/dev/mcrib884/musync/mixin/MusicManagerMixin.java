@@ -23,7 +23,7 @@ public class MusicManagerMixin {
     private void onTick(CallbackInfo ci) {
 
         Minecraft mc = Minecraft.getInstance();
-        if (ClientMusicPlayer.INSTANCE.getMusyncActive() || mc.player != null) {
+        if (ClientMusicPlayer.INSTANCE.getMusyncActive()) {
 
             if (this.currentMusic != null) {
                 mc.getSoundManager().stop(this.currentMusic);

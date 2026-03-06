@@ -30,49 +30,9 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     private val isOp: Boolean
         get() = Minecraft.getInstance().player?.hasPermissions(2) == true
 
-    private val OGG_NAMES: Map<String, String> = mapOf(
-        "music/game/calm1" to "Minecraft", "music/game/calm2" to "Clark", "music/game/calm3" to "Sweden",
-        "music/game/hal1" to "Subwoofer Lullaby", "music/game/hal2" to "Living Mice",
-        "music/game/hal3" to "Haggstrom", "music/game/hal4" to "Danny",
-        "music/game/nuance1" to "Key", "music/game/nuance2" to "Oxygene",
-        "music/game/piano1" to "Dry Hands", "music/game/piano2" to "Wet Hands",
-        "music/game/piano3" to "Mice on Venus",
-        "music/game/creative/creative1" to "Biome Fest", "music/game/creative/creative2" to "Blind Spots",
-        "music/game/creative/creative3" to "Haunt Muskie", "music/game/creative/creative4" to "Aria Math",
-        "music/game/creative/creative5" to "Dreiton", "music/game/creative/creative6" to "Taswell",
-        "music/menu/menu1" to "Mutation", "music/menu/menu2" to "Moog City 2",
-        "music/menu/menu3" to "Beginning 2", "music/menu/menu4" to "Floating Trees",
-        "music/game/nether/rubedo" to "Rubedo", "music/game/nether/chrysopoeia" to "Chrysopoeia",
-        "music/game/nether/so_below" to "So Below",
-        "music/game/nether/concrete_halls" to "Concrete Halls", "music/game/nether/dead_voxel" to "Dead Voxel",
-        "music/game/nether/warmth" to "Warmth", "music/game/nether/ballad_of_the_cats" to "Ballad of the Cats",
-        "music/game/end/end" to "The End", "music/game/end/boss" to "Boss",
-        "music/game/end/credits" to "Alpha",
-        "music/game/stand_tall" to "Stand Tall", "music/game/left_to_bloom" to "Left to Bloom",
-        "music/game/one_more_day" to "One More Day", "music/game/infinite_amethyst" to "Infinite Amethyst",
-        "music/game/wending" to "Wending", "music/game/ancestry" to "Ancestry",
-        "music/game/comforting_memories" to "Comforting Memories", "music/game/floating_dream" to "Floating Dream",
-        "music/game/an_ordinary_day" to "An Ordinary Day", "music/game/echo_in_the_wind" to "Echo in the Wind",
-        "music/game/a_familiar_room" to "A Familiar Room", "music/game/bromeliad" to "Bromeliad",
-        "music/game/crescent_dunes" to "Crescent Dunes", "music/game/firebugs" to "Firebugs",
-        "music/game/labyrinthine" to "Labyrinthine", "music/game/eld_unknown" to "Eld Unknown",
-        "music/game/deeper" to "Deeper", "music/game/featherfall" to "Featherfall",
-        "music/game/water/axolotl" to "Axolotl", "music/game/water/dragon_fish" to "Dragon Fish",
-        "music/game/water/shuniji" to "Shuniji",
-        "music/game/swamp/aerie" to "Aerie", "music/game/swamp/firebugs" to "Firebugs (Swamp)",
-    )
-
-    private val POOL_NAMES: Map<String, String> = mapOf(
-        "minecraft:music.game" to "Game", "minecraft:music.creative" to "Creative",
-        "minecraft:music.menu" to "Menu", "minecraft:music.under_water" to "Underwater",
-        "minecraft:music.end" to "The End", "minecraft:music.dragon" to "Dragon Fight",
-        "minecraft:music.credits" to "Credits",
-        "minecraft:music.nether.basalt_deltas" to "Basalt Deltas",
-        "minecraft:music.nether.crimson_forest" to "Crimson Forest",
-        "minecraft:music.nether.nether_wastes" to "Nether Wastes",
-        "minecraft:music.nether.soul_sand_valley" to "Soul Sand Valley",
-        "minecraft:music.nether.warped_forest" to "Warped Forest",
-    )
+    private fun formatTrack(id: String): String {
+        return dev.mcrib884.musync.TrackNames.formatTrack(id)
+    }
 
     override fun init() {
         super.init()
@@ -329,20 +289,4 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
 
-    private fun formatTrack(id: String): String {
-
-        if (id.contains("|")) {
-            val oggPath = id.split("|", limit = 2)[1]
-            return OGG_NAMES[oggPath] ?: oggPath.substringAfterLast("/")
-                .replace("_", " ").replaceFirstChar { it.uppercase() }
-        }
-
-        if (id.startsWith("custom:")) {
-            return "[Custom] " + id.removePrefix("custom:")
-                .replace("_", " ").replaceFirstChar { it.uppercase() }
-        }
-
-        return POOL_NAMES[id] ?: id.removePrefix("minecraft:music.")
-            .replace(".", " ").replace("_", " ").replaceFirstChar { it.uppercase() }
-    }
 }

@@ -11,7 +11,7 @@ data class CustomTrackDataPacket(
     val data: ByteArray
 ) {
     companion object {
-        const val CHUNK_SIZE = 256 * 1024
+        const val CHUNK_SIZE = 32 * 1024
 
         fun encode(packet: CustomTrackDataPacket, buf: FriendlyByteBuf) {
             buf.writeUtf(packet.trackName)

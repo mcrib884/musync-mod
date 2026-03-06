@@ -1,6 +1,6 @@
 modLoader = "kotlinforforge"
 loaderVersion = "*"
-issueTrackerURL = "https://github.com/ThePandaOliver/Multiloader-Template/issues"
+issueTrackerURL = "https://github.com/mcrib884/musync/issues"
 license = "${mod_license}"
 
 [[mods]]
@@ -9,7 +9,7 @@ version = "${mod_version}"
 displayName = "${mod_name}"
 authors = "${mod_authors}"
 description = "${mod_description}"
-logoFile = "icon.png"
+logoFile = "assets/musync/icon.png"
 
 [[dependencies."${mod_id}"]]
 modId = "forge"

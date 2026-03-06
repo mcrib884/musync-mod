@@ -4,18 +4,20 @@ import java.io.File
 
 object CustomTrackManager {
 
-    private val tracks = mutableMapOf<String, ByteArray>()
+    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
 
-    private val durations = mutableMapOf<String, Long>()
+    private data class TrackInfo(val file: File, val size: Long)
+    private val tracks = mutableMapOf<String, TrackInfo>()
+
+    const val MAX_TRACK_SIZE = 50L * 1024 * 1024
 
     fun scan(serverDir: File) {
         tracks.clear()
-        durations.clear()
 
         val folder = File(serverDir, "customtracks")
         if (!folder.exists()) {
             folder.mkdirs()
-            println("[MuSync] Created customtracks/ folder at ${folder.absolutePath}")
+            logger.info("Created customtracks/ folder at ${folder.absolutePath}")
             return
         }
 
@@ -25,28 +27,27 @@ object CustomTrackManager {
         } ?: return
 
         for (file in audioFiles) {
-            val name = file.nameWithoutExtension.lowercase().replace(" ", "_")
-            try {
-                val bytes = file.readBytes()
-                tracks[name] = bytes
-                println("[MuSync] Loaded custom track: $name (${bytes.size} bytes, ${file.extension.lowercase()})")
-            } catch (e: Exception) {
-                println("[MuSync] Failed to load custom track ${file.name}: ${e.message}")
+            if (file.length() > MAX_TRACK_SIZE) {
+                logger.warn("Skipping oversized custom track: ${file.name} (${file.length()} bytes, max=${MAX_TRACK_SIZE})")
+                continue
             }
+            val name = file.nameWithoutExtension.lowercase().replace(" ", "_")
+            tracks[name] = TrackInfo(file, file.length())
+            logger.info("Indexed custom track: $name (${file.length()} bytes, ${file.extension.lowercase()})")
         }
 
-        println("[MuSync] Loaded ${tracks.size} custom tracks from ${folder.absolutePath}")
+        logger.info("Indexed ${tracks.size} custom tracks from ${folder.absolutePath}")
     }
 
     fun getTrackNames(): List<String> = tracks.keys.toList()
 
-    fun getTrackData(name: String): ByteArray? = tracks[name]
+    fun getTrackFile(name: String): File? = tracks[name]?.file
 
     fun hasTrack(name: String): Boolean = tracks.containsKey(name)
 
     fun getTrackCount(): Int = tracks.size
 
     fun getManifest(): List<Pair<String, Int>> {
-        return tracks.map { (name, data) -> name to data.size }
+        return tracks.map { (name, info) -> name to info.size.toInt() }
     }
 }

@@ -14,6 +14,9 @@ import java.nio.ShortBuffer
 
 object CustomTrackPlayer {
 
+    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
+    private const val MAX_DECODE_BYTES = 150L * 1024 * 1024
+
     fun play(audioData: ByteArray): Int {
         if (audioData.size < 4) return -1
 
@@ -22,7 +25,7 @@ object CustomTrackPlayer {
             magic == "RIFF" -> playWav(audioData)
             magic == "OggS" -> playOgg(audioData)
             else -> {
-                println("[MuSync] CustomTrackPlayer: Unknown audio format (magic: $magic)")
+                logger.warn("Unknown audio format (magic: $magic)")
                 -1
             }
         }
@@ -39,7 +42,7 @@ object CustomTrackPlayer {
                 val error = stack.mallocInt(1)
                 val handle = STBVorbis.stb_vorbis_open_memory(inputBuffer, error, null)
                 if (handle == 0L) {
-                    println("[MuSync] CustomTrackPlayer: STBVorbis error ${error[0]}")
+                    logger.error("STBVorbis error ${error[0]}")
                     return -1
                 }
 
@@ -48,6 +51,13 @@ object CustomTrackPlayer {
                 val channels = info.channels()
                 val sampleRate = info.sample_rate()
                 val totalSamples = STBVorbis.stb_vorbis_stream_length_in_samples(handle)
+
+                val decodedSize = totalSamples.toLong() * channels.toLong() * 2L
+                if (decodedSize > MAX_DECODE_BYTES) {
+                    logger.error("Track too large to decode: ${decodedSize / (1024 * 1024)}MB exceeds ${MAX_DECODE_BYTES / (1024 * 1024)}MB limit")
+                    STBVorbis.stb_vorbis_close(handle)
+                    return -1
+                }
 
                 val pcmBuffer: ShortBuffer = MemoryUtil.memAllocShort(totalSamples * channels)
                 STBVorbis.stb_vorbis_get_samples_short_interleaved(handle, channels, pcmBuffer)
@@ -68,7 +78,7 @@ object CustomTrackPlayer {
                 return source
             }
         } catch (e: Exception) {
-            println("[MuSync] CustomTrackPlayer error: ${e.message}")
+            logger.error("CustomTrackPlayer error: ${e.message}")
             return -1
         } finally {
             inputBuffer?.let { MemoryUtil.memFree(it) }
@@ -78,7 +88,7 @@ object CustomTrackPlayer {
     private fun playWav(wavData: ByteArray): Int {
         try {
             if (wavData.size < 44) {
-                println("[MuSync] WAV too small: ${wavData.size} bytes")
+                logger.warn("WAV too small: ${wavData.size} bytes")
                 return -1
             }
 
@@ -105,7 +115,7 @@ object CustomTrackPlayer {
                     "fmt " -> {
                         val audioFormat = buf.short.toInt() and 0xFFFF
                         if (audioFormat != 1) {
-                            println("[MuSync] WAV: unsupported format $audioFormat (only PCM/1 supported)")
+                            logger.warn("WAV: unsupported format $audioFormat (only PCM/1 supported)")
                             return -1
                         }
                         channels = buf.short.toInt() and 0xFFFF
@@ -133,7 +143,7 @@ object CustomTrackPlayer {
             }
 
             if (dataBytes == null || channels == 0 || sampleRate == 0 || bitsPerSample == 0) {
-                println("[MuSync] WAV: missing required chunks")
+                logger.warn("WAV: missing required chunks")
                 return -1
             }
 
@@ -143,7 +153,7 @@ object CustomTrackPlayer {
                 channels == 2 && bitsPerSample == 8 -> AL10.AL_FORMAT_STEREO8
                 channels == 2 && bitsPerSample == 16 -> AL10.AL_FORMAT_STEREO16
                 else -> {
-                    println("[MuSync] WAV: unsupported format: ${channels}ch ${bitsPerSample}bit")
+                    logger.warn("WAV: unsupported format: ${channels}ch ${bitsPerSample}bit")
                     return -1
                 }
             }
@@ -165,7 +175,7 @@ object CustomTrackPlayer {
 
             return source
         } catch (e: Exception) {
-            println("[MuSync] WAV playback error: ${e.message}")
+            logger.error("WAV playback error: ${e.message}")
             return -1
         }
     }
@@ -187,7 +197,7 @@ object CustomTrackPlayer {
             AL10.alDeleteSources(source)
             if (buffer != 0) AL10.alDeleteBuffers(buffer)
         } catch (e: Exception) {
-            println("[MuSync] Error stopping custom track: ${e.message}")
+            logger.error("Error stopping custom track: ${e.message}")
         }
     }
 
@@ -196,7 +206,7 @@ object CustomTrackPlayer {
             val fileLoc = ResourceLocation(namespace, "sounds/$soundPath.ogg")
             val resource = Minecraft.getInstance().resourceManager.getResource(fileLoc).orElse(null)
             if (resource == null) {
-                println("[MuSync] Could not find resource: $fileLoc")
+                logger.warn("Could not find resource: $fileLoc")
                 return -1
             }
 
@@ -215,7 +225,7 @@ object CustomTrackPlayer {
 
             return source
         } catch (e: Exception) {
-            println("[MuSync] Error playing from resource: ${e.message}")
+            logger.error("Error playing from resource: ${e.message}")
             return -1
         }
     }
