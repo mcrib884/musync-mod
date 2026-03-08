@@ -8,10 +8,11 @@ data class MusicControlPacket(
     val action: Action,
     val trackId: String?,
     val queuePosition: Int?,
-    val seekMs: Long = 0
+    val seekMs: Long = 0,
+    val targetDim: String? = null
 ) {
     enum class Action {
-        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL
+        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL
     }
 
     companion object {
@@ -20,6 +21,7 @@ data class MusicControlPacket(
             buf.writeNullable(packet.trackId, FriendlyByteBuf::writeUtf)
             buf.writeNullable(packet.queuePosition, FriendlyByteBuf::writeInt)
             buf.writeLong(packet.seekMs)
+            buf.writeNullable(packet.targetDim, FriendlyByteBuf::writeUtf)
         }
 
         fun decode(buf: FriendlyByteBuf): MusicControlPacket {
@@ -27,7 +29,8 @@ data class MusicControlPacket(
                 action = buf.readEnum(Action::class.java),
                 trackId = buf.readNullable(FriendlyByteBuf::readUtf),
                 queuePosition = buf.readNullable(FriendlyByteBuf::readInt),
-                seekMs = buf.readLong()
+                seekMs = buf.readLong(),
+                targetDim = buf.readNullable(FriendlyByteBuf::readUtf)
             )
         }
 

@@ -10,7 +10,7 @@ import net.minecraft.client.gui.GuiGraphics
 /*import com.mojang.blaze3d.vertex.PoseStack
 import net.minecraft.client.gui.GuiComponent*/
 //?}
-import net.minecraft.client.gui.components.Button
+import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import net.minecraftforge.network.PacketDistributor
@@ -18,20 +18,24 @@ import net.minecraftforge.network.PacketDistributor
 class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
     private val panelW = 280
-    private val panelH = 240
+    private val panelH = 256
     private var panelX = 0
     private var panelY = 0
 
     private var scrollOffset = 0
-    private val visibleRows = 10
+    private val visibleRows = 9
     private val rowH = 16
 
-    private var selectedIndex: Int = -1
+    private var selectedTrackKey: String? = null
 
     private var draggingScrollbar = false
 
-    private var playBtn: Button? = null
-    private var queueBtn: Button? = null
+    private data class BtnBounds(val x: Int, val y: Int, val w: Int, val h: Int, val label: String, var active: Boolean = true)
+
+    private var backBounds: BtnBounds? = null
+    private var playBounds: BtnBounds? = null
+    private var queueBounds: BtnBounds? = null
+    private var searchField: EditBox? = null
 
     private val isOp: Boolean
         get() = Minecraft.getInstance().player?.hasPermissions(2) == true
@@ -40,45 +44,41 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         MuSyncCommand.getAllTracksForBrowser()
     }
 
+    private fun filteredTracks(): List<Pair<String, String>> {
+        val query = searchField?.value?.trim()?.lowercase().orEmpty()
+        if (query.isEmpty()) return tracks
+        return tracks.filter { (key, displayName) ->
+            key.lowercase().contains(query) || displayName.lowercase().contains(query)
+        }
+    }
+
+    private fun currentSelectionIndex(items: List<Pair<String, String>>): Int {
+        val selected = selectedTrackKey ?: return -1
+        return items.indexOfFirst { it.first == selected }
+    }
+
+    private fun syncSelectionToFilter() {
+        val filteredKeys = filteredTracks().map { it.first }.toSet()
+        if (selectedTrackKey !in filteredKeys) selectedTrackKey = null
+        scrollOffset = 0
+    }
+
     override fun init() {
         super.init()
         panelX = (width - panelW) / 2
         panelY = (height - panelH) / 2
 
+        searchField = EditBox(font, panelX + 8, panelY + 24, panelW - 16, 16, Component.literal("Search tracks"))
+        searchField!!.setMaxLength(64)
+        searchField!!.setResponder { syncSelectionToFilter() }
+        addRenderableWidget(searchField!!)
+
         val btnY = panelY + panelH - 26
         val btnW = 70
 
-        //? if >=1.20 {
-        addRenderableWidget(Button.builder(Component.literal("\u2190 Back")) {
-            Minecraft.getInstance().setScreen(MusicControlScreen())
-        }.bounds(panelX + 6, btnY, 50, 18).build())
-        //?} else {
-        /*addRenderableWidget(Button(panelX + 6, btnY, 50, 18, Component.literal("\u2190 Back")) {
-            Minecraft.getInstance().setScreen(MusicControlScreen())
-        })*/
-        //?}
-
-        //? if >=1.20 {
-        playBtn = addRenderableWidget(Button.builder(Component.literal("\u25B6 Play Now")) {
-            playSelected()
-        }.bounds(panelX + panelW - btnW * 2 - 12, btnY, btnW, 18).build())
-        //?} else {
-        /*playBtn = addRenderableWidget(Button(panelX + panelW - btnW * 2 - 12, btnY, btnW, 18, Component.literal("\u25B6 Play Now")) {
-            playSelected()
-        })*/
-        //?}
-        playBtn!!.active = false
-
-        //? if >=1.20 {
-        queueBtn = addRenderableWidget(Button.builder(Component.literal("+ Queue")) {
-            queueSelected()
-        }.bounds(panelX + panelW - btnW - 6, btnY, btnW, 18).build())
-        //?} else {
-        /*queueBtn = addRenderableWidget(Button(panelX + panelW - btnW - 6, btnY, btnW, 18, Component.literal("+ Queue")) {
-            queueSelected()
-        })*/
-        //?}
-        queueBtn!!.active = false
+        backBounds = BtnBounds(panelX + 6, btnY, 50, 16, "\u2190 Back")
+        playBounds = BtnBounds(panelX + panelW - btnW * 2 - 12, btnY, btnW, 16, "\u25B6 Play Now", false)
+        queueBounds = BtnBounds(panelX + panelW - btnW - 6, btnY, btnW, 16, "+ Queue", false)
     }
 
     //? if >=1.20 {
@@ -90,25 +90,37 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         graphics.fill(panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
 
         val cx = panelX + panelW / 2
+        val visibleTracks = filteredTracks()
 
         graphics.drawCenteredString(font, "\u266B Track Browser \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
+        graphics.drawString(font, "Search", panelX + 8, panelY + 14, 0xFF888888.toInt())
 
-        graphics.drawCenteredString(font, "${tracks.size} tracks available", cx, panelY + 20, 0xFF666688.toInt())
+        val countLabel = if (visibleTracks.size == tracks.size) {
+            "${tracks.size} tracks available"
+        } else {
+            "${visibleTracks.size} of ${tracks.size} tracks"
+        }
+        graphics.drawCenteredString(font, countLabel, cx, panelY + 42, 0xFF666688.toInt())
 
-        val listY = panelY + 34
+        val listY = panelY + 56
         val listH = visibleRows * rowH
 
         graphics.fill(panelX + 4, listY - 2, panelX + panelW - 4, listY + listH + 2, 0x30000000)
 
-        val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+        val maxScroll = (visibleTracks.size - visibleRows).coerceAtLeast(0)
         scrollOffset = scrollOffset.coerceIn(0, maxScroll)
 
+        if (visibleTracks.isEmpty()) {
+            graphics.drawCenteredString(font, "No matching tracks", cx, listY + 28, 0xFF666666.toInt())
+        }
+
+        val selectedIndex = currentSelectionIndex(visibleTracks)
         for (i in 0 until visibleRows) {
             val idx = i + scrollOffset
-            if (idx >= tracks.size) break
+            if (idx >= visibleTracks.size) break
 
             val y = listY + i * rowH
-            val (_, displayName) = tracks[idx]
+            val (_, displayName) = visibleTracks[idx]
             val isSelected = idx == selectedIndex
             val isHovered = mouseX >= panelX + 6 && mouseX <= panelX + panelW - 10 &&
                     mouseY >= y && mouseY < y + rowH
@@ -135,11 +147,11 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             graphics.drawString(font, trimmed, panelX + 12, y + 4, textColor)
         }
 
-        if (tracks.size > visibleRows) {
+        if (visibleTracks.size > visibleRows) {
             val barX = panelX + panelW - 10
             val barW = 6
             val barTotalH = listH
-            val thumbH = ((visibleRows.toFloat() / tracks.size) * barTotalH).toInt().coerceAtLeast(10)
+            val thumbH = ((visibleRows.toFloat() / visibleTracks.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = listY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
 
             graphics.fill(barX, listY, barX + barW, listY + barTotalH, 0xFF222244.toInt())
@@ -148,12 +160,14 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             graphics.fill(barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 
-        val hasSelection = selectedIndex >= 0 && selectedIndex < tracks.size
-        playBtn?.active = hasSelection && isOp
-        queueBtn?.active = hasSelection && isOp
+        val hasSelection = selectedIndex >= 0 && selectedIndex < visibleTracks.size
+        val canAct = hasSelection && isOp
+        backBounds?.let { b -> drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) }
+        playBounds?.let { b -> drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canAct) }
+        queueBounds?.let { b -> drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canAct) }
 
         if (hasSelection) {
-            val (_, selDisplay) = tracks[selectedIndex]
+            val (_, selDisplay) = visibleTracks[selectedIndex]
             graphics.drawCenteredString(font, "Selected: $selDisplay", cx, panelY + panelH - 44, 0xFF00CC66.toInt())
         }
 
@@ -175,22 +189,36 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
         GuiComponent.drawCenteredString(poseStack, font, "\u266B Track Browser \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
-        GuiComponent.drawCenteredString(poseStack, font, "${tracks.size} tracks available", cx, panelY + 20, 0xFF666688.toInt())
+        val visibleTracks = filteredTracks()
+        GuiComponent.drawString(poseStack, font, "Search", panelX + 8, panelY + 14, 0xFF888888.toInt())
 
-        val listY = panelY + 34
+        val countLabel = if (visibleTracks.size == tracks.size) {
+            "${tracks.size} tracks available"
+        } else {
+            "${visibleTracks.size} of ${tracks.size} tracks"
+        }
+        GuiComponent.drawCenteredString(poseStack, font, countLabel, cx, panelY + 42, 0xFF666688.toInt())
+
+        val listY = panelY + 56
         val listH = visibleRows * rowH
 
         GuiComponent.fill(poseStack, panelX + 4, listY - 2, panelX + panelW - 4, listY + listH + 2, 0x30000000)
 
-        val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+        val maxScroll = (visibleTracks.size - visibleRows).coerceAtLeast(0)
         scrollOffset = scrollOffset.coerceIn(0, maxScroll)
+
+        if (visibleTracks.isEmpty()) {
+            GuiComponent.drawCenteredString(poseStack, font, "No matching tracks", cx, listY + 28, 0xFF666666.toInt())
+        }
+
+        val selectedIndex = currentSelectionIndex(visibleTracks)
 
         for (i in 0 until visibleRows) {
             val idx = i + scrollOffset
-            if (idx >= tracks.size) break
+            if (idx >= visibleTracks.size) break
 
             val y = listY + i * rowH
-            val (_, displayName) = tracks[idx]
+            val (_, displayName) = visibleTracks[idx]
             val isSelected = idx == selectedIndex
             val isHovered = mouseX >= panelX + 6 && mouseX <= panelX + panelW - 10 &&
                     mouseY >= y && mouseY < y + rowH
@@ -217,11 +245,11 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             GuiComponent.drawString(poseStack, font, trimmed, panelX + 12, y + 4, textColor)
         }
 
-        if (tracks.size > visibleRows) {
+        if (visibleTracks.size > visibleRows) {
             val barX = panelX + panelW - 10
             val barW = 6
             val barTotalH = listH
-            val thumbH = ((visibleRows.toFloat() / tracks.size) * barTotalH).toInt().coerceAtLeast(10)
+            val thumbH = ((visibleRows.toFloat() / visibleTracks.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = listY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
 
             GuiComponent.fill(poseStack, barX, listY, barX + barW, listY + barTotalH, 0xFF222244.toInt())
@@ -230,12 +258,14 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             GuiComponent.fill(poseStack, barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 
-        val hasSelection = selectedIndex >= 0 && selectedIndex < tracks.size
-        playBtn?.active = hasSelection && isOp
-        queueBtn?.active = hasSelection && isOp
+        val hasSelection = selectedIndex >= 0 && selectedIndex < visibleTracks.size
+        val canAct1919 = hasSelection && isOp
+        backBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) }
+        playBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canAct1919) }
+        queueBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canAct1919) }
 
         if (hasSelection) {
-            val (_, selDisplay) = tracks[selectedIndex]
+            val (_, selDisplay) = visibleTracks[selectedIndex]
             GuiComponent.drawCenteredString(poseStack, font, "Selected: $selDisplay", cx, panelY + panelH - 44, 0xFF00CC66.toInt())
         }
 
@@ -249,11 +279,12 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
-            val listY = panelY + 34
+            val visibleTracks = filteredTracks()
+            val listY = panelY + 56
             val listH = visibleRows * rowH
-            val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+            val maxScroll = (visibleTracks.size - visibleRows).coerceAtLeast(0)
 
-            if (tracks.size > visibleRows) {
+            if (visibleTracks.size > visibleRows) {
                 val barX = panelX + panelW - 10
                 val barW = 6
                 if (mouseX >= barX && mouseX <= barX + barW &&
@@ -270,10 +301,23 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
                 mouseY >= listY && mouseY < listY + listH) {
                 val rowIdx = ((mouseY - listY) / rowH).toInt()
                 val idx = rowIdx + scrollOffset
-                if (idx in tracks.indices) {
-                    selectedIndex = if (selectedIndex == idx) -1 else idx
+                if (idx in visibleTracks.indices) {
+                    val clickedKey = visibleTracks[idx].first
+                    selectedTrackKey = if (selectedTrackKey == clickedKey) null else clickedKey
                     return true
                 }
+            }
+
+            val mx = mouseX.toInt(); val my = mouseY.toInt()
+            if (backBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+                Minecraft.getInstance().setScreen(MusicControlScreen()); return true
+            }
+            val hasSelection = selectedTrackKey != null && isOp
+            if (hasSelection && playBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+                playSelected(); return true
+            }
+            if (hasSelection && queueBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+                queueSelected(); return true
             }
         }
         return super.mouseClicked(mouseX, mouseY, button)
@@ -281,9 +325,9 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
         if (draggingScrollbar && button == 0) {
-            val listY = panelY + 34
+            val listY = panelY + 56
             val listH = visibleRows * rowH
-            val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+            val maxScroll = (filteredTracks().size - visibleRows).coerceAtLeast(0)
             val ratio = ((mouseY - listY) / listH).toFloat().coerceIn(0f, 1f)
             scrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
             return true
@@ -300,7 +344,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     }
 
     override fun mouseScrolled(mouseX: Double, mouseY: Double, delta: Double): Boolean {
-        val maxScroll = (tracks.size - visibleRows).coerceAtLeast(0)
+        val maxScroll = (filteredTracks().size - visibleRows).coerceAtLeast(0)
         scrollOffset = (scrollOffset - delta.toInt()).coerceIn(0, maxScroll)
         return true
     }
@@ -316,8 +360,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     }
 
     private fun playSelected() {
-        if (selectedIndex < 0 || selectedIndex >= tracks.size) return
-        val (key, _) = tracks[selectedIndex]
+        val key = selectedTrackKey ?: return
         val packet = MusicControlPacket(
             action = MusicControlPacket.Action.PLAY_TRACK,
             trackId = key,
@@ -327,8 +370,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     }
 
     private fun queueSelected() {
-        if (selectedIndex < 0 || selectedIndex >= tracks.size) return
-        val (key, _) = tracks[selectedIndex]
+        val key = selectedTrackKey ?: return
         val packet = MusicControlPacket(
             action = MusicControlPacket.Action.ADD_TO_QUEUE,
             trackId = key,
@@ -336,4 +378,30 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         )
         PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
     }
+
+    //? if >=1.20 {
+    private fun drawCustomBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean = true) {
+        val bg = when { !active -> 0xFF111118.toInt(); hovered -> 0xFF334433.toInt(); else -> 0xFF1C1C2A.toInt() }
+        val borderColor = if (active) 0xFF00CC66.toInt() else 0xFF336644.toInt()
+        val textColor = if (active) 0xFFFFFFFF.toInt() else 0xFF667766.toInt()
+        graphics.fill(x, y, x + w, y + h, bg)
+        graphics.fill(x, y, x + w, y + 1, borderColor)
+        graphics.fill(x, y, x + 1, y + h, borderColor)
+        graphics.fill(x + w - 1, y, x + w, y + h, borderColor)
+        graphics.fill(x, y + h - 1, x + w, y + h, borderColor)
+        graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
+    }
+    //?} else {
+    /*private fun drawCustomBtn1919(poseStack: PoseStack, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean = true) {
+        val bg = when { !active -> 0xFF111118.toInt(); hovered -> 0xFF334433.toInt(); else -> 0xFF1C1C2A.toInt() }
+        val borderColor = if (active) 0xFF00CC66.toInt() else 0xFF336644.toInt()
+        val textColor = if (active) 0xFFFFFFFF.toInt() else 0xFF667766.toInt()
+        GuiComponent.fill(poseStack, x, y, x + w, y + h, bg)
+        GuiComponent.fill(poseStack, x, y, x + w, y + 1, borderColor)
+        GuiComponent.fill(poseStack, x, y, x + 1, y + h, borderColor)
+        GuiComponent.fill(poseStack, x + w - 1, y, x + w, y + h, borderColor)
+        GuiComponent.fill(poseStack, x, y + h - 1, x + w, y + h, borderColor)
+        GuiComponent.drawString(poseStack, font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
+    }*/
+    //?}
 }

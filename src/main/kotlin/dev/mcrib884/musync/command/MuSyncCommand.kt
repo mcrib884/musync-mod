@@ -739,7 +739,7 @@ object MuSyncCommand {
         }
 
         for (key in TRACK_MAP.keys) {
-            val displayName = key.replace("_", " ").replaceFirstChar { it.uppercase() }
+            val displayName = dev.mcrib884.musync.TrackNames.formatTrack(TRACK_MAP.getValue(key))
             result.add(key to displayName)
         }
 
@@ -774,8 +774,7 @@ object MuSyncCommand {
                         if (qualifiedPath in knownSpecificSounds) continue
 
                         val key = "$fullEventId|$qualifiedPath"
-                        val friendlyOgg = soundLoc.path.substringAfterLast("/")
-                            .replace("_", " ").replaceFirstChar { it.uppercase() }
+                        val friendlyOgg = dev.mcrib884.musync.TrackNames.formatOggName(qualifiedPath)
                         val prefix = if (soundLoc.namespace != "minecraft") "[${soundLoc.namespace}] " else ""
                         val displayName = "$prefix$friendlyOgg ($poolName)"
                         result.add(key to displayName)
@@ -803,6 +802,15 @@ object MuSyncCommand {
         }
 
         return result.sortedBy { it.second }
+    }
+
+    fun toBrowserTrackKey(trackId: String): String {
+        if (trackId.startsWith("custom:")) return trackId.removePrefix("custom:")
+
+        val known = TRACK_MAP.entries.firstOrNull { it.value == trackId }
+        if (known != null) return known.key
+
+        return trackId
     }
 
     private fun formatDiscoveredTrackName(soundEventId: String): String {

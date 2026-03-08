@@ -24,6 +24,7 @@ object ClientMusicPlayer {
     private var playStartTime: Long = 0
 
     private var currentStatus: MusicStatusPacket? = null
+    private var statusReceivedAt: Long = 0L
 
     var musyncActive: Boolean = false
 
@@ -276,9 +277,11 @@ object ClientMusicPlayer {
     fun updateStatus(packet: MusicStatusPacket) {
         musyncActive = true
         currentStatus = packet
+        statusReceivedAt = System.currentTimeMillis()
     }
 
     fun getCurrentStatus(): MusicStatusPacket? = currentStatus
+    fun getStatusAge(): Long = if (statusReceivedAt == 0L) 0L else System.currentTimeMillis() - statusReceivedAt
 
 
     fun getCurrentTrack(): String? = currentTrack

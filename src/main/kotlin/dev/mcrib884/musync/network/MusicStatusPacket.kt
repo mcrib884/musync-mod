@@ -17,8 +17,22 @@ data class MusicStatusPacket(
     val nextMusicDelayTicks: Int = 0,
     val customMinDelay: Int = -1,
     val customMaxDelay: Int = -1,
-    val syncOverworld: Boolean = false
+    val syncOverworld: Boolean = false,
+    val activeDimensions: List<DimensionStatus> = emptyList()
 ) {
+    data class DimensionStatus(
+        val id: String,
+        val players: List<String>,
+        val currentTrack: String? = null,
+        val resolvedName: String = "",
+        val isPlaying: Boolean = false,
+        val currentPositionMs: Long = 0,
+        val durationMs: Long = 0,
+        val waitingForNextTrack: Boolean = false,
+        val ticksSinceLastMusic: Int = 0,
+        val nextMusicDelayTicks: Int = 0
+    )
+
     enum class PlayMode {
         AUTONOMOUS, PLAYLIST, SINGLE_TRACK
     }
@@ -38,6 +52,19 @@ data class MusicStatusPacket(
             buf.writeInt(packet.customMinDelay)
             buf.writeInt(packet.customMaxDelay)
             buf.writeBoolean(packet.syncOverworld)
+            buf.writeInt(packet.activeDimensions.size)
+            for (dimension in packet.activeDimensions) {
+                buf.writeUtf(dimension.id)
+                buf.writeCollection(dimension.players, FriendlyByteBuf::writeUtf)
+                buf.writeNullable(dimension.currentTrack, FriendlyByteBuf::writeUtf)
+                buf.writeUtf(dimension.resolvedName)
+                buf.writeBoolean(dimension.isPlaying)
+                buf.writeLong(dimension.currentPositionMs)
+                buf.writeLong(dimension.durationMs)
+                buf.writeBoolean(dimension.waitingForNextTrack)
+                buf.writeInt(dimension.ticksSinceLastMusic)
+                buf.writeInt(dimension.nextMusicDelayTicks)
+            }
         }
 
         fun decode(buf: FriendlyByteBuf): MusicStatusPacket {
@@ -54,7 +81,25 @@ data class MusicStatusPacket(
                 nextMusicDelayTicks = buf.readInt(),
                 customMinDelay = buf.readInt(),
                 customMaxDelay = buf.readInt(),
-                syncOverworld = buf.readBoolean()
+                syncOverworld = buf.readBoolean(),
+                activeDimensions = buildList {
+                    repeat(buf.readInt()) {
+                        add(
+                            DimensionStatus(
+                                id = buf.readUtf(),
+                                players = buf.readList(FriendlyByteBuf::readUtf),
+                                currentTrack = buf.readNullable(FriendlyByteBuf::readUtf),
+                                resolvedName = buf.readUtf(),
+                                isPlaying = buf.readBoolean(),
+                                currentPositionMs = buf.readLong(),
+                                durationMs = buf.readLong(),
+                                waitingForNextTrack = buf.readBoolean(),
+                                ticksSinceLastMusic = buf.readInt(),
+                                nextMusicDelayTicks = buf.readInt()
+                            )
+                        )
+                    }
+                }
             )
         }
 
