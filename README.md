@@ -34,3 +34,6 @@ To build a specific version using the Gradle wrapper directly, set the Stonecutt
 ```bash
 ./gradlew 1.19.2-forge:build
 ```
+```bash
+./gradlew 1.21.1-neoforge:build
+```
