@@ -99,10 +99,11 @@ class MuSyncForge {
 
                         val isOp = mc.player?.hasPermissions(2) == true
                         if (isOp && !ClientTrackManager.isDownloading) {
+                            val targetDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
                             if (MUSIC_SKIP_KEY.consumeClick()) {
                                 PacketHandler.INSTANCE.send(
                                     PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(MusicControlPacket.Action.SKIP, null, null)
+                                    MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim)
                                 )
                             }
                             if (MUSIC_PAUSE_KEY.consumeClick()) {
@@ -111,13 +112,13 @@ class MuSyncForge {
                                     MusicControlPacket.Action.PAUSE else MusicControlPacket.Action.RESUME
                                 PacketHandler.INSTANCE.send(
                                     PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(action, null, null)
+                                    MusicControlPacket(action, null, null, targetDim = targetDim)
                                 )
                             }
                             if (MUSIC_STOP_KEY.consumeClick()) {
                                 PacketHandler.INSTANCE.send(
                                     PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(MusicControlPacket.Action.STOP, null, null)
+                                    MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim)
                                 )
                             }
                         } else {

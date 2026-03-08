@@ -1,8 +1,15 @@
 package dev.mcrib884.musync.network
 
 import net.minecraft.network.FriendlyByteBuf
+//? if neoforge {
+/*import net.minecraft.network.codec.StreamCodec
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+import net.minecraft.resources.ResourceLocation
+import net.neoforged.neoforge.network.handling.IPayloadContext*/
+//?} else {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
+//?}
 
 data class MusicStatusPacket(
     val currentTrack: String?,
@@ -19,7 +26,12 @@ data class MusicStatusPacket(
     val customMaxDelay: Int = -1,
     val syncOverworld: Boolean = false,
     val activeDimensions: List<DimensionStatus> = emptyList()
+//? if neoforge {
+/*) : CustomPacketPayload {
+    override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> = TYPE*/
+//?} else {
 ) {
+//?}
     data class DimensionStatus(
         val id: String,
         val players: List<String>,
@@ -38,6 +50,13 @@ data class MusicStatusPacket(
     }
 
     companion object {
+        //? if neoforge {
+        /*val TYPE = CustomPacketPayload.Type<MusicStatusPacket>(ResourceLocation.fromNamespaceAndPath("musync", "music_status"))
+        val STREAM_CODEC: StreamCodec<FriendlyByteBuf, MusicStatusPacket> = StreamCodec.of(
+            { buf, packet -> encode(packet, buf) }, ::decode
+        )*/
+        //?}
+
         fun encode(packet: MusicStatusPacket, buf: FriendlyByteBuf) {
             buf.writeNullable(packet.currentTrack, FriendlyByteBuf::writeUtf)
             buf.writeLong(packet.currentPositionMs)
@@ -103,6 +122,13 @@ data class MusicStatusPacket(
             )
         }
 
+        //? if neoforge {
+        /*fun handleNeo(packet: MusicStatusPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.ClientMusicPlayer.updateStatus(packet)
+            }
+        }*/
+        //?} else {
         fun handle(packet: MusicStatusPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
 
@@ -110,5 +136,6 @@ data class MusicStatusPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?}
     }
 }

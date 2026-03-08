@@ -15,7 +15,11 @@ object OggDurationReader {
     fun getDurationMs(soundLocation: ResourceLocation): Long {
         var buffer: ByteBuffer? = null
         try {
+            //? if >=1.21 {
+            /*val fileLoc = ResourceLocation.fromNamespaceAndPath(soundLocation.namespace, "sounds/" + soundLocation.path + ".ogg")*/
+            //?} else {
             val fileLoc = ResourceLocation(soundLocation.namespace, "sounds/" + soundLocation.path + ".ogg")
+            //?}
             val resourceManager = Minecraft.getInstance().resourceManager
             val resource = resourceManager.getResource(fileLoc).orElse(null) ?: return -1
 

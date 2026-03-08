@@ -13,7 +13,6 @@ import net.minecraft.client.gui.GuiComponent*/
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
-import net.minecraftforge.network.PacketDistributor
 
 class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
@@ -70,6 +69,9 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
         searchField = EditBox(font, panelX + 8, panelY + 24, panelW - 16, 16, Component.literal("Search tracks"))
         searchField!!.setMaxLength(64)
+        searchField!!.setBordered(false)
+        searchField!!.setTextColor(0xFFCCCCCC.toInt())
+        searchField!!.setTextColorUneditable(0xFF888888.toInt())
         searchField!!.setResponder { syncSelectionToFilter() }
         addRenderableWidget(searchField!!)
 
@@ -81,9 +83,15 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         queueBounds = BtnBounds(panelX + panelW - btnW - 6, btnY, btnW, 16, "+ Queue", false)
     }
 
+    //? if >=1.21 {
+    /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
+    //?}
+
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        //? if <1.21 {
         renderBackground(graphics)
+        //?}
 
         graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
@@ -93,14 +101,23 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         val visibleTracks = filteredTracks()
 
         graphics.drawCenteredString(font, "\u266B Track Browser \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
-        graphics.drawString(font, "Search", panelX + 8, panelY + 14, 0xFF888888.toInt())
+        graphics.drawString(font, "Search", panelX + 8, panelY + 12, 0xFF888888.toInt())
+
+        val sfY = panelY + 22
+        val sfFocused = searchField?.isFocused == true
+        val sfBc = if (sfFocused) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
+        graphics.fill(panelX + 7, sfY, panelX + panelW - 7, sfY + 20, 0xFF1C1C2A.toInt())
+        graphics.fill(panelX + 7, sfY, panelX + panelW - 7, sfY + 1, sfBc)
+        graphics.fill(panelX + 7, sfY, panelX + 8, sfY + 20, sfBc)
+        graphics.fill(panelX + panelW - 8, sfY, panelX + panelW - 7, sfY + 20, sfBc)
+        graphics.fill(panelX + 7, sfY + 19, panelX + panelW - 7, sfY + 20, sfBc)
 
         val countLabel = if (visibleTracks.size == tracks.size) {
             "${tracks.size} tracks available"
         } else {
             "${visibleTracks.size} of ${tracks.size} tracks"
         }
-        graphics.drawCenteredString(font, countLabel, cx, panelY + 42, 0xFF666688.toInt())
+        graphics.drawCenteredString(font, countLabel, cx, panelY + 44, 0xFF666688.toInt())
 
         val listY = panelY + 56
         val listH = visibleRows * rowH
@@ -117,34 +134,39 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         val selectedIndex = currentSelectionIndex(visibleTracks)
         for (i in 0 until visibleRows) {
             val idx = i + scrollOffset
-            if (idx >= visibleTracks.size) break
-
-            val y = listY + i * rowH
-            val (_, displayName) = visibleTracks[idx]
+            val slotY = listY + i * rowH
+            val rowTop = slotY + 1
+            val rowBottom = slotY + rowH - 1
+            val rowLeft = panelX + 6
+            val rowRight = panelX + panelW - 14
+            val hasTrack = idx < visibleTracks.size
             val isSelected = idx == selectedIndex
-            val isHovered = mouseX >= panelX + 6 && mouseX <= panelX + panelW - 10 &&
-                    mouseY >= y && mouseY < y + rowH
-
-            val bgColor = when {
-                isSelected -> 0xFF003322.toInt()
-                isHovered -> 0x30FFFFFF
-                i % 2 == 0 -> 0x15FFFFFF
-                else -> 0x00000000
+            val rowHovered = hasTrack && mouseX >= rowLeft && mouseX < rowRight && mouseY >= rowTop && mouseY < rowBottom
+            val rowFill = when {
+                isSelected -> 0x661F3A31.toInt()
+                rowHovered -> 0x6634364A.toInt()
+                hasTrack && i % 2 == 0 -> 0x442A2C3E.toInt()
+                hasTrack -> 0x33202233.toInt()
+                else -> 0x22151726.toInt()
             }
-            if (bgColor != 0) {
-                graphics.fill(panelX + 5, y, panelX + panelW - 5, y + rowH, bgColor)
-            }
+            val rowBorder = if (isSelected) 0xAA00CC66.toInt() else if (hasTrack) 0x884A4D68.toInt() else 0x442A2C40.toInt()
 
-            if (isSelected) {
-                graphics.fill(panelX + 5, y, panelX + 7, y + rowH, 0xFF00CC66.toInt())
-            }
+            graphics.fill(rowLeft, rowTop, rowRight, rowBottom, rowFill)
+            graphics.fill(rowLeft, rowTop, rowRight, rowTop + 1, rowBorder)
+            graphics.fill(rowLeft, rowBottom - 1, rowRight, rowBottom, rowBorder)
+            graphics.fill(rowLeft, rowTop, rowLeft + 1, rowBottom, rowBorder)
+            graphics.fill(rowRight - 1, rowTop, rowRight, rowBottom, rowBorder)
 
+            if (!hasTrack) continue
+
+            val (_, displayName) = visibleTracks[idx]
             val textColor = if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt()
-            val maxNameW = panelW - 24
+            val maxNameW = panelW - 34
             val trimmed = if (font.width(displayName) > maxNameW) {
                 font.plainSubstrByWidth(displayName, maxNameW) + "..."
             } else displayName
-            graphics.drawString(font, trimmed, panelX + 12, y + 4, textColor)
+            val textY = rowTop + ((rowBottom - rowTop) - font.lineHeight) / 2 + 1
+            graphics.drawString(font, trimmed, rowLeft + 6, textY, textColor)
         }
 
         if (visibleTracks.size > visibleRows) {
@@ -154,9 +176,10 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             val thumbH = ((visibleRows.toFloat() / visibleTracks.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = listY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
 
-            graphics.fill(barX, listY, barX + barW, listY + barTotalH, 0xFF222244.toInt())
-
-            val thumbColor = if (draggingScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+            graphics.fill(barX, listY, barX + barW, listY + barTotalH, 0xFF151726.toInt())
+            graphics.fill(barX, listY, barX + barW, listY + 1, 0xFF2A2C40.toInt())
+            graphics.fill(barX, listY + barTotalH - 1, barX + barW, listY + barTotalH, 0xFF2A2C40.toInt())
+            val thumbColor = if (draggingScrollbar) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
             graphics.fill(barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 
@@ -297,7 +320,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
                 }
             }
 
-            if (isOp && mouseX >= panelX + 5 && mouseX <= panelX + panelW - 14 &&
+            if (isOp && mouseX >= panelX + 6 && mouseX < panelX + panelW - 14 &&
                 mouseY >= listY && mouseY < listY + listH) {
                 val rowIdx = ((mouseY - listY) / rowH).toInt()
                 val idx = rowIdx + scrollOffset
@@ -343,7 +366,11 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         return super.mouseReleased(mouseX, mouseY, button)
     }
 
+    //? if >=1.21 {
+    /*override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, delta: Double): Boolean {*/
+    //?} else {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, delta: Double): Boolean {
+    //?}
         val maxScroll = (filteredTracks().size - visibleRows).coerceAtLeast(0)
         scrollOffset = (scrollOffset - delta.toInt()).coerceIn(0, maxScroll)
         return true
@@ -352,7 +379,11 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     override fun isPauseScreen(): Boolean = false
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        //? if neoforge {
+        /*if (dev.mcrib884.musync.MuSyncNeoForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {*/
+        //?} else {
         if (dev.mcrib884.musync.MuSyncForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
+        //?}
             onClose()
             return true
         }
@@ -366,7 +397,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             trackId = key,
             queuePosition = null
         )
-        PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
+        PacketHandler.sendToServer(packet)
     }
 
     private fun queueSelected() {
@@ -376,7 +407,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             trackId = key,
             queuePosition = null
         )
-        PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
+        PacketHandler.sendToServer(packet)
     }
 
     //? if >=1.20 {

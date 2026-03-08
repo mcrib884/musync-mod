@@ -1,5 +1,5 @@
 modLoader = "kotlinforforge"
-loaderVersion = "*"
+loaderVersion = "[5,)"
 issueTrackerURL = "https://github.com/mcrib884/musync/issues"
 license = "${mod_license}"
 
@@ -12,23 +12,16 @@ description = "${mod_description}"
 logoFile = "icon.png"
 
 [[dependencies."${mod_id}"]]
-modId = "forge"
-mandatory = true
+modId = "neoforge"
+type = "required"
 versionRange = "[${loader_version},)"
 ordering = "NONE"
 side = "BOTH"
 
 [[dependencies."${mod_id}"]]
 modId = "minecraft"
-mandatory = true
+type = "required"
 versionRange = "[${minecraft_version},)"
-ordering = "NONE"
-side = "BOTH"
-
-[[dependencies."${mod_id}"]]
-modId = "kotlinforforge"
-mandatory = true
-versionRange = "[3.0.0,)"
 ordering = "NONE"
 side = "BOTH"
 

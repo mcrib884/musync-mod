@@ -20,7 +20,7 @@ version = modVersion
 base { archivesName = "${modId}-${loaderPlatform}" }
 
 architectury {
-	forge()
+	if (loaderPlatform == "neoforge") neoForge() else forge()
 	platformSetupLoomIde()
 	minecraft = mcVersion
 }
@@ -57,6 +57,7 @@ repositories {
 	mavenCentral()
 	maven("https://maven.architectury.dev/")
 	maven("https://maven.minecraftforge.net/")
+	maven("https://maven.neoforged.net/releases")
 	maven("https://maven.parchmentmc.org/")
 	maven("https://thedarkcolour.github.io/KotlinForForge/")
 }
@@ -79,9 +80,23 @@ dependencies {
 		parchment("org.parchmentmc.data:parchment-$parchmentMinecraftVersion:$parchmentMappingsVersion@zip")
 	})
 
-	"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
+	if (loaderPlatform == "neoforge") {
+		"neoForge"("net.neoforged:neoforge:${loaderVersion}")
+		implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
+	} else {
+		"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
+		implementation("thedarkcolour:kotlinforforge:3.12.0")
+	}
+}
 
-	implementation("thedarkcolour:kotlinforforge:3.12.0")
+// NeoForge dev run: the Loom-remapped loader jar pulls in net.neoforged.fancymodloader:loader
+// via a transitive range dep, putting two jars providing the same fml_loader Java module on the
+// module path. Exclude the redundant Maven artifact so only the Loom-remapped version is used.
+if (loaderPlatform == "neoforge") {
+	configurations.all {
+		exclude(group = "net.neoforged.fancymodloader", module = "loader")
+		exclude(group = "net.neoforged.fancymodloader", module = "earlydisplay")
+	}
 }
 
 val javaVersion: String by project
@@ -112,8 +127,13 @@ tasks {
 		)
 
 		inputs.properties(props)
-		filesMatching(listOf("META-INF/mods.toml", "**.mixins.json", "pack.mcmeta")) {
+		filesMatching(listOf("META-INF/mods.toml", "META-INF/neoforge.mods.toml", "**.mixins.json", "pack.mcmeta")) {
 			expand(props)
+		}
+		if (loaderPlatform == "neoforge") {
+			exclude("META-INF/mods.toml")
+		} else {
+			exclude("META-INF/neoforge.mods.toml")
 		}
 	}
 

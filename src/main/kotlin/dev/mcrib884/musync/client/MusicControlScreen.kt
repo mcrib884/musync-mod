@@ -13,7 +13,6 @@ import net.minecraft.client.gui.GuiComponent*/
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
-import net.minecraftforge.network.PacketDistributor
 import dev.mcrib884.musync.entityLevel
 
 class MusicControlScreen : Screen(Component.literal("MuSync")) {
@@ -40,6 +39,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var resetBounds: BtnBounds? = null
     private var playlistNavBounds: BtnBounds? = null
     private var tracksNavBounds: BtnBounds? = null
+    private var cacheBtnBounds: BtnBounds? = null
     private var minDelayField: EditBox? = null
     private var maxDelayField: EditBox? = null
     private var minFieldX = 0
@@ -123,8 +123,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         val navY = panelY + panelH - 26
         val navBtnW = 70
-        playlistNavBounds = BtnBounds(panelX + panelW / 2 - navBtnW - 3, navY, navBtnW, 16, "\u266B Playlist")
-        tracksNavBounds = BtnBounds(panelX + panelW / 2 + 3, navY, navBtnW, 16, "\u266A Tracks")
+        playlistNavBounds = BtnBounds(panelX + 4, navY, navBtnW, 16, "\u266B Playlist")
+        tracksNavBounds = BtnBounds(panelX + 78, navY, navBtnW, 16, "\u266A Tracks")
+
+        val cacheBtnW = 76
+        cacheBtnBounds = BtnBounds(panelX + panelW - cacheBtnW - 6, navY, cacheBtnW, 16, "Cache")
 
         val mc = Minecraft.getInstance()
         val playerDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
@@ -135,9 +138,15 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         dimBtnY = panelY + 4
     }
 
+    //? if >=1.21 {
+    /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
+    //?}
+
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        //? if <1.21 {
         renderBackground(graphics)
+        //?}
 
         graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
@@ -161,15 +170,25 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             status?.currentPositionMs ?: 0
         }
         val playerDimId = Minecraft.getInstance().player?.entityLevel()?.dimension()?.location()?.toString() ?: "minecraft:overworld"
-        val displayDimSt = if (viewedDimId != playerDimId) status?.activeDimensions?.find { it.id == viewedDimId } else null
+        val usePrimaryDisplay = status?.mode == MusicStatusPacket.PlayMode.PLAYLIST || viewedDimId == "minecraft:overworld"
+        val displayDimSt = if (!usePrimaryDisplay) status?.activeDimensions?.find { it.id == viewedDimId } else null
         val displayTrack = displayDimSt?.currentTrack ?: status?.currentTrack
         val displayResolved = displayDimSt?.resolvedName ?: status?.resolvedName ?: ""
         val displayIsPlaying = displayDimSt?.isPlaying ?: (status?.isPlaying == true)
         val displayDuration: Long = displayDimSt?.durationMs ?: (status?.durationMs ?: 0)
-        val rawDisplayPosition: Long = displayDimSt?.currentPositionMs ?: ownPosition
-        val displayPosition: Long = if (displayDimSt != null && displayDimSt.isPlaying)
-            (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDimSt.durationMs.coerceAtLeast(rawDisplayPosition))
-        else rawDisplayPosition
+        val rawDisplayPosition: Long = when {
+            viewedDimId == playerDimId -> ownPosition
+            displayDimSt != null -> displayDimSt.currentPositionMs
+            else -> status?.currentPositionMs ?: 0
+        }
+        val displayPosition: Long = when {
+            viewedDimId == playerDimId -> rawDisplayPosition
+            displayDimSt != null && displayDimSt.isPlaying ->
+                (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDimSt.durationMs.coerceAtLeast(rawDisplayPosition))
+            usePrimaryDisplay && status?.isPlaying == true ->
+                (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDuration.coerceAtLeast(rawDisplayPosition))
+            else -> rawDisplayPosition
+        }
         val displayWaiting = displayDimSt?.waitingForNextTrack ?: (status?.waitingForNextTrack == true)
         val displayTicksSince = displayDimSt?.ticksSinceLastMusic ?: (status?.ticksSinceLastMusic ?: 0)
         val displayDelayTicks = displayDimSt?.nextMusicDelayTicks ?: (status?.nextMusicDelayTicks ?: 0)
@@ -264,6 +283,18 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         tracksNavBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
             drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        cacheBtnBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            val cacheLabel = if (ClientTrackManager.cacheEnabled) "\u26BF Cache: ON" else "\u26BF Cache: OFF"
+            val cacheLabelColor = if (ClientTrackManager.cacheEnabled) 0xFF00FF88.toInt() else 0xFFFF6655.toInt()
+            val bg = if (hov) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
+            graphics.fill(b.x, b.y, b.x + b.w, b.y + b.h, bg)
+            graphics.fill(b.x, b.y, b.x + b.w, b.y + 1, 0xFF00CC66.toInt())
+            graphics.fill(b.x, b.y, b.x + 1, b.y + b.h, 0xFF00CC66.toInt())
+            graphics.fill(b.x + b.w - 1, b.y, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
+            graphics.fill(b.x, b.y + b.h - 1, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
+            graphics.drawString(font, cacheLabel, b.x + (b.w - font.width(cacheLabel)) / 2, b.y + (b.h - 8) / 2, cacheLabelColor)
         }
 
         val modeText = when (status?.mode) {
@@ -431,6 +462,18 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         resetBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
         playlistNavBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
         tracksNavBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
+        cacheBtnBounds?.let { b ->
+            val hovC = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            val cacheLbl = if (ClientTrackManager.cacheEnabled) "\u26BF Cache: ON" else "\u26BF Cache: OFF"
+            val cacheTxtColor = if (ClientTrackManager.cacheEnabled) 0xFF00FF88.toInt() else 0xFFFF6655.toInt()
+            val bgC = if (hovC) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
+            GuiComponent.fill(poseStack, b.x, b.y, b.x + b.w, b.y + b.h, bgC)
+            GuiComponent.fill(poseStack, b.x, b.y, b.x + b.w, b.y + 1, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, b.x, b.y, b.x + 1, b.y + b.h, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, b.x + b.w - 1, b.y, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, b.x, b.y + b.h - 1, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
+            GuiComponent.drawString(poseStack, font, cacheLbl, b.x + (b.w - font.width(cacheLbl)) / 2, b.y + (b.h - 8) / 2, cacheTxtColor)
+        }
 
         val modeText = when (status?.mode) {
             MusicStatusPacket.PlayMode.AUTONOMOUS -> "Auto"
@@ -480,6 +523,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize) {
             renderTooltip(poseStack, Component.literal("Sync with server"), mouseX, mouseY)
         }
+        if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) {
+            val dimSt1919 = status?.activeDimensions?.find { it.id == viewedDimId }
+            val players1919 = dimSt1919?.players ?: emptyList()
+            val tooltipLines1919 = buildList {
+                add(Component.literal(getDimDisplayName(viewedDimId)))
+                if (players1919.isNotEmpty()) {
+                    add(Component.literal("Players: ${players1919.joinToString(", ")}"))
+                }
+            }
+            renderComponentTooltip(poseStack, tooltipLines1919, mouseX, mouseY)
+        }
     }*/
     //?}
 
@@ -514,6 +568,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (button == 0 && tracksNavBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h } == true) {
             Minecraft.getInstance().setScreen(TrackBrowserScreen()); return true
         }
+        if (button == 0 && cacheBtnBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h } == true) {
+            ClientTrackManager.setCacheEnabled(!ClientTrackManager.cacheEnabled); return true
+        }
         if (isOp && button == 0 && mouseX >= barX && mouseX <= barX + barW && mouseY >= barY - 2 && mouseY <= barY + barH + 2) {
             val now = System.currentTimeMillis()
             if (now - lastSeekTimeMs < SEEK_COOLDOWN_MS) return true
@@ -527,7 +584,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                     seekMs = seekMs,
                     targetDim = viewedDimId
                 )
-                PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
+                PacketHandler.sendToServer(packet)
                 lastSeekTimeMs = now
                 return true
             }
@@ -552,7 +609,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     override fun isPauseScreen(): Boolean = false
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        //? if neoforge {
+        /*if (dev.mcrib884.musync.MuSyncNeoForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {*/
+        //?} else {
         if (dev.mcrib884.musync.MuSyncForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
+        //?}
             onClose()
             return true
         }
@@ -570,7 +631,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     private fun sendControl(action: MusicControlPacket.Action, trackId: String? = null) {
         val packet = MusicControlPacket(action = action, trackId = trackId, queuePosition = null, targetDim = viewedDimId)
-        PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
+        PacketHandler.sendToServer(packet)
     }
 
     //? if >=1.20 {
@@ -636,6 +697,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     ) {
         if (mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize) {
             graphics.renderTooltip(font, listOf(Component.literal("Sync with server").visualOrderText), mouseX, mouseY)
+        }
+        if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) {
+            val dimSt = status?.activeDimensions?.find { it.id == viewedDimId }
+            val players = dimSt?.players ?: emptyList()
+            val lines = buildList {
+                add(Component.literal(getDimDisplayName(viewedDimId)).visualOrderText)
+                if (players.isNotEmpty()) {
+                    add(Component.literal("Players: ${players.joinToString(", ")}").visualOrderText)
+                }
+            }
+            graphics.renderTooltip(font, lines, mouseX, mouseY)
         }
     }
     //?} else {

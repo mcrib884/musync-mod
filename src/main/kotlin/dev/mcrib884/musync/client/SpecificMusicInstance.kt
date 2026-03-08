@@ -28,7 +28,11 @@ class SpecificMusicInstance(
         val events = manager.getSoundEvent(this.location)
 
         this.sound = Sound(
+            //? if >=1.21 {
+            /*ResourceLocation.parse(specificSoundPath),*/
+            //?} else {
             specificSoundPath,
+            //?}
             ConstantFloat.of(1.0f),
             ConstantFloat.of(1.0f),
             1,

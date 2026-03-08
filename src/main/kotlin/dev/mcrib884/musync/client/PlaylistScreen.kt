@@ -12,7 +12,6 @@ import net.minecraft.client.gui.GuiComponent*/
 import net.minecraft.client.gui.components.EditBox
 import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
-import net.minecraftforge.network.PacketDistributor
 
 class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
@@ -85,13 +84,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         val tracks = SavedPlaylistManager.getPlaylist(playlistName)
         if (tracks.isEmpty()) return
 
-        PacketHandler.INSTANCE.send(
-            PacketDistributor.SERVER.noArg(),
+        PacketHandler.sendToServer(
             MusicControlPacket(MusicControlPacket.Action.CLEAR_QUEUE, null, null)
         )
         for (track in tracks) {
-            PacketHandler.INSTANCE.send(
-                PacketDistributor.SERVER.noArg(),
+            PacketHandler.sendToServer(
                 MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, track, null)
             )
         }
@@ -116,8 +113,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         panelX = (width - panelW) / 2
         panelY = maxOf(8, (height - panelH) / 2)
 
-        playlistNameField = EditBox(font, panelX + 10, nameFieldY(), panelW - 20, 16, Component.literal("Playlist name"))
+        playlistNameField = EditBox(font, panelX + 10 + 4, nameFieldY() + 4, panelW - 20 - 8, 12, Component.literal("Playlist name"))
         playlistNameField!!.setMaxLength(64)
+        playlistNameField!!.setBordered(false)
+        playlistNameField!!.setTextColor(0xFFFFFFFF.toInt())
+        playlistNameField!!.setTextColorUneditable(0xFF888888.toInt())
         playlistNameField!!.setResponder { value ->
             if (selectedSavedName != null && !selectedSavedName.equals(value, ignoreCase = true)) {
                 selectedSavedName = null
@@ -132,9 +132,15 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         deleteBounds = BtnBounds(panelX + 174, btnY, 60, 16, "Delete")
     }
 
+    //? if >=1.21 {
+    /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
+    //?}
+
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        //? if <1.21 {
         renderBackground(graphics)
+        //?}
 
         graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
@@ -161,31 +167,50 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             graphics.drawCenteredString(font, "Use the Track Browser to add tracks", cx, queueRowsY + 34, 0xFF444466.toInt())
         }
 
-        for (i in 0 until visibleRows) {
-            val idx = i + queueScrollOffset
-            if (idx >= queue.size) break
+        if (queue.isNotEmpty()) {
+            for (i in 0 until visibleRows) {
+                val idx = i + queueScrollOffset
+                val slotY = queueRowsY + i * rowH
+                val rowTop = slotY + 1
+                val rowBottom = slotY + rowH - 1
+                val rowLeft = panelX + 6
+                val rowRight = panelX + panelW - 14
+                val hasTrack = idx < queue.size
+                val rowHovered = hasTrack && mouseX >= rowLeft && mouseX < rowRight && mouseY >= rowTop && mouseY < rowBottom
+                val rowFill = when {
+                    rowHovered -> 0x6634364A.toInt()
+                    hasTrack && i % 2 == 0 -> 0x442A2C3E.toInt()
+                    hasTrack -> 0x33202233.toInt()
+                    else -> 0x00000000
+                }
+                val rowBorder = if (hasTrack) 0x884A4D68.toInt() else 0x00000000
 
-            val y = queueRowsY + i * rowH
-            val trackId = queue[idx]
+                graphics.fill(rowLeft, rowTop, rowRight, rowBottom, rowFill)
+                graphics.fill(rowLeft, rowTop, rowRight, rowTop + 1, rowBorder)
+                graphics.fill(rowLeft, rowBottom - 1, rowRight, rowBottom, rowBorder)
+                graphics.fill(rowLeft, rowTop, rowLeft + 1, rowBottom, rowBorder)
+                graphics.fill(rowRight - 1, rowTop, rowRight, rowBottom, rowBorder)
 
-            if (i % 2 == 0) {
-                graphics.fill(panelX + 4, y - 1, panelX + panelW - 4, y + rowH - 3, 0x20FFFFFF)
-            }
+                if (!hasTrack) continue
 
-            graphics.drawString(font, "${idx + 1}.", panelX + 10, y, 0xFF999999.toInt())
+                val trackId = queue[idx]
+                val textY = rowTop + ((rowBottom - rowTop) - font.lineHeight) / 2 + 1
 
-            val displayName = formatTrack(trackId)
-            val nameW = panelW - 60
-            val trimmed = if (font.width(displayName) > nameW) {
-                font.plainSubstrByWidth(displayName, nameW) + "..."
-            } else displayName
-            graphics.drawString(font, trimmed, panelX + 24, y, 0xFFDDDDDD.toInt())
+                graphics.drawString(font, "${idx + 1}.", rowLeft + 4, textY, 0xFF999999.toInt())
 
-            if (isOp) {
-                val xBtnX = panelX + panelW - 20
-                val hovered = mouseX >= xBtnX && mouseX <= xBtnX + 12 && mouseY >= y - 1 && mouseY < y + rowH - 3
-                val color = if (hovered) 0xFFFF5555.toInt() else 0xFF884444.toInt()
-                graphics.drawString(font, "\u2716", xBtnX, y, color)
+                val displayName = formatTrack(trackId)
+                val nameW = panelW - 68
+                val trimmed = if (font.width(displayName) > nameW) {
+                    font.plainSubstrByWidth(displayName, nameW) + "..."
+                } else displayName
+                graphics.drawString(font, trimmed, rowLeft + 18, textY, 0xFFDDDDDD.toInt())
+
+                if (isOp) {
+                    val xBtnX = rowRight - 14
+                    val hovered = mouseX >= xBtnX && mouseX < xBtnX + 12 && mouseY >= rowTop && mouseY < rowBottom
+                    val color = if (hovered) 0xFFFF6666.toInt() else 0xFFAA6655.toInt()
+                    graphics.drawString(font, "\u2716", xBtnX, textY, color)
+                }
             }
         }
 
@@ -196,9 +221,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             val thumbH = ((visibleRows.toFloat() / queue.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = queueRowsY + ((queueScrollOffset.toFloat() / queueMaxScroll) * (barTotalH - thumbH)).toInt()
 
-            graphics.fill(barX, queueRowsY, barX + barW, queueRowsY + barTotalH, 0xFF222244.toInt())
+            graphics.fill(barX, queueRowsY, barX + barW, queueRowsY + barTotalH, 0xFF151726.toInt())
+            graphics.fill(barX, queueRowsY, barX + barW, queueRowsY + 1, 0xFF2A2C40.toInt())
+            graphics.fill(barX, queueRowsY + barTotalH - 1, barX + barW, queueRowsY + barTotalH, 0xFF2A2C40.toInt())
 
-            val thumbColor = if (draggingQueueScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+            val thumbColor = if (draggingQueueScrollbar) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
             graphics.fill(barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 
@@ -212,21 +239,41 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
         for (i in 0 until savedVisibleRows) {
             val idx = i + savedScrollOffset
-            if (idx >= saved.size) break
-
-            val y = savedListY + i * rowH
-            val name = saved[idx]
-            val isSelected = name == selectedSavedName
-            if (isSelected) {
-                graphics.fill(panelX + 5, y, panelX + panelW - 5, y + rowH - 2, 0xFF003322.toInt())
-            } else if (i % 2 == 0) {
-                graphics.fill(panelX + 5, y, panelX + panelW - 5, y + rowH - 2, 0x15000000)
+            val slotY = savedListY + i * rowH
+            val rowTop = slotY + 1
+            val rowBottom = slotY + rowH - 1
+            val rowLeft = panelX + 6
+            val rowRight = panelX + panelW - 14
+            val hasPlaylist = idx < saved.size
+            val isSelected = hasPlaylist && saved[idx] == selectedSavedName
+            val rowHovered = hasPlaylist && mouseX >= rowLeft && mouseX < rowRight && mouseY >= rowTop && mouseY < rowBottom
+            val rowFill = when {
+                isSelected -> 0x661F3A31.toInt()
+                rowHovered -> 0x6634364A.toInt()
+                hasPlaylist && i % 2 == 0 -> 0x442A2C3E.toInt()
+                hasPlaylist -> 0x33202233.toInt()
+                else -> 0x22151726.toInt()
             }
+            val rowBorder = if (isSelected) 0xAA00CC66.toInt() else if (hasPlaylist) 0x884A4D68.toInt() else 0x442A2C40.toInt()
 
-            val displayName = if (font.width(name) > panelW - 24) {
-                font.plainSubstrByWidth(name, panelW - 24) + "..."
+            graphics.fill(rowLeft, rowTop, rowRight, rowBottom, rowFill)
+            graphics.fill(rowLeft, rowTop, rowRight, rowTop + 1, rowBorder)
+            graphics.fill(rowLeft, rowBottom - 1, rowRight, rowBottom, rowBorder)
+            graphics.fill(rowLeft, rowTop, rowLeft + 1, rowBottom, rowBorder)
+            graphics.fill(rowRight - 1, rowTop, rowRight, rowBottom, rowBorder)
+
+            if (!hasPlaylist) continue
+
+            val name = saved[idx]
+            val textY = rowTop + ((rowBottom - rowTop) - font.lineHeight) / 2 + 1
+            val displayName = if (font.width(name) > panelW - 46) {
+                font.plainSubstrByWidth(name, panelW - 46) + "..."
             } else name
-            graphics.drawString(font, displayName, panelX + 10, y + 3, if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt())
+            graphics.drawString(font, displayName, rowLeft + 4, textY, if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt())
+
+            val xBtnX2 = rowRight - 14
+            val xHov2 = mouseX >= xBtnX2 && mouseX < xBtnX2 + 10 && mouseY >= rowTop && mouseY < rowBottom
+            graphics.drawString(font, "\u2716", xBtnX2, textY, if (xHov2) 0xFFFF6666.toInt() else 0xFFAA6655.toInt())
         }
 
         if (saved.size > savedVisibleRows) {
@@ -236,13 +283,25 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             val thumbH = ((savedVisibleRows.toFloat() / saved.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = savedListY + ((savedScrollOffset.toFloat() / savedMaxScroll) * (barTotalH - thumbH)).toInt()
 
-            graphics.fill(barX, savedListY, barX + barW, savedListY + barTotalH, 0xFF222244.toInt())
+            graphics.fill(barX, savedListY, barX + barW, savedListY + barTotalH, 0xFF151726.toInt())
+            graphics.fill(barX, savedListY, barX + barW, savedListY + 1, 0xFF2A2C40.toInt())
+            graphics.fill(barX, savedListY + barTotalH - 1, barX + barW, savedListY + barTotalH, 0xFF2A2C40.toInt())
 
-            val thumbColor = if (draggingSavedScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+            val thumbColor = if (draggingSavedScrollbar) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
             graphics.fill(barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 
         graphics.drawString(font, "Name", panelX + 10, nameLabelY(), 0xFF888888.toInt())
+
+        // Dark background + border for playlist name field (custom theme)
+        val nfY = nameFieldY()
+        val nfFocused = playlistNameField?.isFocused == true
+        val nfBc = if (nfFocused) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
+        graphics.fill(panelX + 10, nfY, panelX + panelW - 10, nfY + 16, 0xFF1C1C2A.toInt())
+        graphics.fill(panelX + 10, nfY, panelX + panelW - 10, nfY + 1, nfBc)
+        graphics.fill(panelX + 10, nfY, panelX + 11, nfY + 16, nfBc)
+        graphics.fill(panelX + panelW - 11, nfY, panelX + panelW - 10, nfY + 16, nfBc)
+        graphics.fill(panelX + 10, nfY + 15, panelX + panelW - 10, nfY + 16, nfBc)
 
         val canSave = getSaveableTracks().isNotEmpty()
         val canLoad = isOp && selectedSavedName != null
@@ -311,7 +370,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
                 val xBtnX = panelX + panelW - 20
                 val hovered = mouseX >= xBtnX && mouseX <= xBtnX + 12 && mouseY >= y - 1 && mouseY < y + rowH - 3
                 val color = if (hovered) 0xFFFF5555.toInt() else 0xFF884444.toInt()
-                GuiComponent.drawString(poseStack, font, "\u2716", xBtnX, y, color)
+                GuiComponent.drawString(poseStack, font, "\u2716", xBtnX, y + 4, color)
             }
         }
 
@@ -349,10 +408,14 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
                 GuiComponent.fill(poseStack, panelX + 5, y, panelX + panelW - 5, y + rowH - 2, 0x15000000)
             }
 
-            val displayName = if (font.width(name) > panelW - 24) {
-                font.plainSubstrByWidth(name, panelW - 24) + "..."
+            val displayName = if (font.width(name) > panelW - 36) {
+                font.plainSubstrByWidth(name, panelW - 36) + "..."
             } else name
             GuiComponent.drawString(poseStack, font, displayName, panelX + 10, y + 3, if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt())
+
+            val xBtnX2 = panelX + panelW - 18
+            val xHov2 = mouseX >= xBtnX2 && mouseX <= xBtnX2 + 10 && mouseY >= y && mouseY < y + rowH - 2
+            GuiComponent.drawString(poseStack, font, "\u2716", xBtnX2, y + 4, if (xHov2) 0xFFFF5555.toInt() else 0xFF884444.toInt())
         }
 
         if (saved.size > savedVisibleRows) {
@@ -369,6 +432,15 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         }
 
         GuiComponent.drawString(poseStack, font, "Name", panelX + 10, nameLabelY(), 0xFF888888.toInt())
+
+        val nfY1919 = nameFieldY()
+        val nfFocused1919 = playlistNameField?.isFocused == true
+        val nfBc1919 = if (nfFocused1919) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
+        GuiComponent.fill(poseStack, panelX + 10, nfY1919, panelX + panelW - 10, nfY1919 + 16, 0xFF1C1C2A.toInt())
+        GuiComponent.fill(poseStack, panelX + 10, nfY1919, panelX + panelW - 10, nfY1919 + 1, nfBc1919)
+        GuiComponent.fill(poseStack, panelX + 10, nfY1919, panelX + 11, nfY1919 + 16, nfBc1919)
+        GuiComponent.fill(poseStack, panelX + panelW - 11, nfY1919, panelX + panelW - 10, nfY1919 + 16, nfBc1919)
+        GuiComponent.fill(poseStack, panelX + 10, nfY1919 + 15, panelX + panelW - 10, nfY1919 + 16, nfBc1919)
 
         val canSave1919 = getSaveableTracks().isNotEmpty()
         val canLoad1919 = isOp && selectedSavedName != null
@@ -423,24 +495,48 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             }
 
             if (isOp) {
-                val xBtnX = panelX + panelW - 20
+                val rowRight = panelX + panelW - 14
+                val xBtnX = rowRight - 14
                 for (i in 0 until visibleRows) {
                     val idx = i + queueScrollOffset
                     if (idx >= queue.size) break
-                    val y = queueListY + i * rowH
-                    if (mouseX >= xBtnX && mouseX <= xBtnX + 12 && mouseY >= y - 1 && mouseY < y + rowH - 3) {
+                    val slotY = queueListY + i * rowH
+                    val rowTop = slotY + 1
+                    val rowBottom = slotY + rowH - 1
+                    if (mouseX >= xBtnX && mouseX < xBtnX + 12 && mouseY >= rowTop && mouseY < rowBottom) {
                         val packet = MusicControlPacket(
                             action = MusicControlPacket.Action.REMOVE_FROM_QUEUE,
                             trackId = null,
                             queuePosition = idx
                         )
-                        PacketHandler.INSTANCE.send(PacketDistributor.SERVER.noArg(), packet)
+                        PacketHandler.sendToServer(packet)
                         return true
                     }
                 }
             }
 
-            if (mouseX >= panelX + 5 && mouseX <= panelX + panelW - 14 &&
+            // Per-row X delete buttons for saved playlists
+            val savedRowRight = panelX + panelW - 14
+            val savedXBtnX = savedRowRight - 14
+            for (i in 0 until savedVisibleRows) {
+                val idx = i + savedScrollOffset
+                if (idx >= saved.size) break
+                val slotY = savedListY + i * rowH
+                val rowTop = slotY + 1
+                val rowBottom = slotY + rowH - 1
+                if (mouseX >= savedXBtnX && mouseX < savedXBtnX + 10 && mouseY >= rowTop && mouseY < rowBottom) {
+                    val name = saved[idx]
+                    if (SavedPlaylistManager.deletePlaylist(name)) {
+                        if (selectedSavedName == name) {
+                            selectedSavedName = null
+                            playlistNameField?.value = ""
+                        }
+                    }
+                    return true
+                }
+            }
+
+            if (mouseX >= panelX + 6 && mouseX < panelX + panelW - 14 &&
                 mouseY >= savedListY && mouseY < savedListY + savedVisibleRows * rowH) {
                 val rowIdx = ((mouseY - savedListY) / rowH).toInt()
                 val idx = rowIdx + savedScrollOffset
@@ -499,7 +595,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         return super.mouseReleased(mouseX, mouseY, button)
     }
 
+    //? if >=1.21 {
+    /*override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, delta: Double): Boolean {*/
+    //?} else {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, delta: Double): Boolean {
+    //?}
         val queueAreaTop = queueRowsY()
         val queueAreaBottom = queueAreaTop + visibleRows * rowH
         val savedAreaTop = savedRowsY()
@@ -519,7 +619,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     override fun isPauseScreen(): Boolean = false
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        //? if neoforge {
+        /*if (dev.mcrib884.musync.MuSyncNeoForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {*/
+        //?} else {
         if (dev.mcrib884.musync.MuSyncForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
+        //?}
             onClose()
             return true
         }

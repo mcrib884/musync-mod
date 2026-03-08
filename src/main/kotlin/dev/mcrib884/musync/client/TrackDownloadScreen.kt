@@ -43,9 +43,15 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
         }
     }
 
+    //? if >=1.21 {
+    /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
+    //?}
+
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        //? if <1.21 {
         renderBackground(graphics)
+        //?}
 
         graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())

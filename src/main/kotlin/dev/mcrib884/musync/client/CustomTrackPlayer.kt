@@ -203,7 +203,11 @@ object CustomTrackPlayer {
 
     fun playFromResource(soundPath: String, seekMs: Long = 0, namespace: String = "minecraft"): Int {
         try {
+            //? if >=1.21 {
+            /*val fileLoc = ResourceLocation.fromNamespaceAndPath(namespace, "sounds/$soundPath.ogg")*/
+            //?} else {
             val fileLoc = ResourceLocation(namespace, "sounds/$soundPath.ogg")
+            //?}
             val resource = Minecraft.getInstance().resourceManager.getResource(fileLoc).orElse(null)
             if (resource == null) {
                 logger.warn("Could not find resource: $fileLoc")

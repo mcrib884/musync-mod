@@ -29,6 +29,7 @@ public class ChannelMixin {
         }
     }
 
+    //? if <1.21 {
     @Redirect(
         method = "pumpBuffers",
         at = @At(value = "INVOKE", target = "Lorg/lwjgl/openal/AL10;alSourcePlay(I)V", remap = false)
@@ -38,4 +39,5 @@ public class ChannelMixin {
             AL10.alSourcePlay(source);
         }
     }
+    //?}
 }

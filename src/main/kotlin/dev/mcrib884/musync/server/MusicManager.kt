@@ -3,12 +3,20 @@ package dev.mcrib884.musync.server
 import dev.mcrib884.musync.network.*
 import net.minecraft.server.level.ServerPlayer
 import net.minecraft.resources.ResourceLocation
+//? if neoforge {
+/*import net.neoforged.neoforge.event.tick.ServerTickEvent
+import net.neoforged.neoforge.event.entity.player.PlayerEvent
+import net.neoforged.neoforge.event.server.ServerStartedEvent
+import net.neoforged.neoforge.event.server.ServerStoppingEvent
+import net.neoforged.neoforge.server.ServerLifecycleHooks*/
+//?} else {
 import net.minecraftforge.event.TickEvent
 import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.event.server.ServerStartedEvent
 import net.minecraftforge.event.server.ServerStoppingEvent
 import net.minecraftforge.server.ServerLifecycleHooks
 import net.minecraftforge.network.PacketDistributor
+//?}
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -152,7 +160,17 @@ object MusicManager {
         if (!isPlayerOp(player)) return
 
         val playerDim = player.entityLevel().dimension().location().toString()
-        val effectiveDim = if (packet.targetDim != null) packet.targetDim else {
+        val forcePrimaryControl = (currentMode == MusicStatusPacket.PlayMode.PLAYLIST || userPlaylist.isNotEmpty()) &&
+            packet.action in setOf(
+                MusicControlPacket.Action.STOP,
+                MusicControlPacket.Action.SKIP,
+                MusicControlPacket.Action.PAUSE,
+                MusicControlPacket.Action.RESUME,
+                MusicControlPacket.Action.SEEK
+            )
+        val effectiveDim = if (forcePrimaryControl) {
+            "minecraft:overworld"
+        } else if (packet.targetDim != null) packet.targetDim else {
             if (playerDim != "minecraft:overworld" && player.uuid !in syncOverworld) playerDim else "minecraft:overworld"
         }
         val dimStream = if (effectiveDim != "minecraft:overworld") getStreamForDim(effectiveDim) else null
@@ -297,7 +315,7 @@ object MusicManager {
             val server = ServerLifecycleHooks.getCurrentServer() ?: return
             for (p in server.playerList.players) {
                 if (shouldPlayerHearPrimary(p)) {
-                    PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, packet)
+                    PacketHandler.sendToPlayer(p, packet)
                 }
             }
             broadcastStatus()
@@ -308,10 +326,48 @@ object MusicManager {
         userPlaylist.add(trackId)
         if (!isPlaying || currentTrack == null) {
             val nextTrack = userPlaylist.poll()
-            currentMode = MusicStatusPacket.PlayMode.PLAYLIST
-            playTrack(nextTrack)
+            startPlaylistTrack(nextTrack)
         }
         broadcastStatus()
+    }
+
+    private fun resetDimensionStreamsForPlaylist() {
+        val server = ServerLifecycleHooks.getCurrentServer() ?: return
+        for (stream in dimensionStreams.values) {
+            for (player in server.playerList.players) {
+                if (shouldPlayerHearDim(player, stream)) {
+                    sendStopToPlayer(player)
+                }
+            }
+
+            updateDimPopulation(stream)
+            stream.track = null
+            stream.startTime = 0
+            stream.duration = 0
+            stream.playing = false
+            stream.paused = false
+            stream.pausedPos = 0
+            stream.specific = ""
+            stream.resolved = null
+            stream.clientEnd = false
+            stream.recent.clear()
+
+            if (stream.active) {
+                stream.waiting = true
+                stream.ticksSince = 0
+                stream.delayTicks = 100
+            } else {
+                stream.waiting = false
+                stream.ticksSince = 0
+                stream.delayTicks = 0
+            }
+        }
+    }
+
+    private fun startPlaylistTrack(trackId: String) {
+        resetDimensionStreamsForPlaylist()
+        currentMode = MusicStatusPacket.PlayMode.PLAYLIST
+        playTrack(trackId)
     }
 
     private fun removeFromQueue(position: Int) {
@@ -336,8 +392,12 @@ object MusicManager {
         broadcastStatus()
     }
 
+    //? if neoforge {
+    /*fun onServerTick(event: ServerTickEvent.Post) {*/
+    //?} else {
     fun onServerTick(event: TickEvent.ServerTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
+    //?}
 
         val server = ServerLifecycleHooks.getCurrentServer() ?: return
         if (server.playerList.players.isEmpty()) {
@@ -414,8 +474,7 @@ object MusicManager {
     private fun onTrackFinished() {
         if (userPlaylist.isNotEmpty()) {
             val nextTrack = userPlaylist.poll()
-            currentMode = MusicStatusPacket.PlayMode.PLAYLIST
-            playTrack(nextTrack)
+            startPlaylistTrack(nextTrack)
         } else {
             broadcastSync(MusicSyncPacket.Action.STOP)
             currentTrack = null
@@ -612,8 +671,7 @@ object MusicManager {
                     ticksSinceLastMusic = 0
                     val nextTrack = userPlaylist.poll()
                     if (nextTrack != null) {
-                        currentMode = MusicStatusPacket.PlayMode.PLAYLIST
-                        playTrack(nextTrack)
+                        startPlaylistTrack(nextTrack)
                     }
                 }
             } else {
@@ -786,7 +844,7 @@ object MusicManager {
             val server = ServerLifecycleHooks.getCurrentServer() ?: return
             for (p in server.playerList.players) {
                 if (shouldPlayerHearDim(p, stream)) {
-                    PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, packet)
+                    PacketHandler.sendToPlayer(p, packet)
                 }
             }
             broadcastStatus()
@@ -819,7 +877,7 @@ object MusicManager {
         val server = ServerLifecycleHooks.getCurrentServer() ?: return
         for (p in server.playerList.players) {
             if (shouldPlayerHearDim(p, stream)) {
-                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, packet)
+                PacketHandler.sendToPlayer(p, packet)
             }
         }
         broadcastStatus()
@@ -877,7 +935,7 @@ object MusicManager {
         val server = ServerLifecycleHooks.getCurrentServer() ?: return
         for (player in server.playerList.players) {
             if (shouldPlayerHearDim(player, stream)) {
-                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+                PacketHandler.sendToPlayer(player, packet)
             }
         }
     }
@@ -894,7 +952,7 @@ object MusicManager {
                 action = if (stream.playing && !stream.paused) MusicSyncPacket.Action.PLAY else MusicSyncPacket.Action.PAUSE,
                 specificSound = syncSpecific
             )
-            PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+            PacketHandler.sendToPlayer(player, packet)
         }
     }
 
@@ -912,7 +970,7 @@ object MusicManager {
                             serverTimeMs = System.currentTimeMillis(),
                             action = MusicSyncPacket.Action.STOP
                         )
-                        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, stopPacket)
+                        PacketHandler.sendToPlayer(player, stopPacket)
                     }
                 }
             }
@@ -954,7 +1012,7 @@ object MusicManager {
                     trackId = "", startPositionMs = 0, serverTimeMs = System.currentTimeMillis(),
                     action = MusicSyncPacket.Action.STOP
                 )
-                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, stopPacket)
+                PacketHandler.sendToPlayer(player, stopPacket)
             }
         } else if (hasOverworldPlayers) {
             syncOverworld.add(player.uuid)
@@ -980,14 +1038,15 @@ object MusicManager {
                 trackId = "", startPositionMs = 0, serverTimeMs = System.currentTimeMillis(),
                 action = MusicSyncPacket.Action.STOP
             )
-            PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { serverPlayer }, stopPacket)
+            PacketHandler.sendToPlayer(serverPlayer, stopPacket)
         }
 
         // Handle the from-dim stream becoming empty now (before we send new audio)
         val fromStream = getStreamForDim(fromDim)
         if (fromStream != null) {
             fromStream.active = countPlayersInDimensionExcluding(fromDim, serverPlayer) > 0
-            if (!fromStream.active && !playlistProtected) {
+            val keepPausedStream = !fromStream.active && fromStream.paused && fromStream.track != null
+            if (!fromStream.active && !playlistProtected && !keepPausedStream) {
                 fromStream.reset()
                 broadcastStatus()
             }
@@ -1168,7 +1227,7 @@ object MusicManager {
             serverTimeMs = System.currentTimeMillis(),
             action = MusicSyncPacket.Action.STOP
         )
-        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, stopPacket)
+        PacketHandler.sendToPlayer(player, stopPacket)
     }
 
     private fun sendAppropriateSyncToPlayer(player: ServerPlayer, dimensionIdOverride: String? = null) {
@@ -1202,7 +1261,7 @@ object MusicManager {
                 action = if (isPlaying && !isPaused) MusicSyncPacket.Action.PLAY else MusicSyncPacket.Action.PAUSE,
                 specificSound = syncSpecific
             )
-            PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+            PacketHandler.sendToPlayer(player, packet)
         }
     }
 
@@ -1218,7 +1277,7 @@ object MusicManager {
         val server = ServerLifecycleHooks.getCurrentServer() ?: return
         for (p in server.playerList.players) {
             if (shouldPlayerHearPrimary(p)) {
-                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, packet)
+                PacketHandler.sendToPlayer(p, packet)
             }
         }
     }
@@ -1241,7 +1300,7 @@ object MusicManager {
         val server = ServerLifecycleHooks.getCurrentServer() ?: return
         for (p in server.playerList.players) {
             if (shouldPlayerHearPrimary(p)) {
-                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, packet)
+                PacketHandler.sendToPlayer(p, packet)
             }
         }
         broadcastStatus()
@@ -1286,7 +1345,7 @@ object MusicManager {
             syncOverworld = player.uuid in syncOverworld,
             activeDimensions = getActiveDimensionStatuses()
         )
-        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+        PacketHandler.sendToPlayer(player, packet)
     }
 
     private fun getActiveDimensionStatuses(): List<MusicStatusPacket.DimensionStatus> {
@@ -1380,7 +1439,7 @@ object MusicManager {
                                 if (server != null) {
                                     for (p in server.playerList.players) {
                                         if (p.uuid != player.uuid && shouldPlayerHearPrimary(p)) {
-                                            PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, resyncPacket)
+                                            PacketHandler.sendToPlayer(p, resyncPacket)
                                         }
                                     }
                                 }
@@ -1416,7 +1475,7 @@ object MusicManager {
                                         if (server != null) {
                                             for (p in server.playerList.players) {
                                                 if (p.uuid != player.uuid && shouldPlayerHearDim(p, stream)) {
-                                                    PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { p }, resyncPacket)
+                                                    PacketHandler.sendToPlayer(p, resyncPacket)
                                                 }
                                             }
                                         }
@@ -1463,7 +1522,11 @@ object MusicManager {
 
     fun onServerStarted(event: ServerStartedEvent) {
         val server = ServerLifecycleHooks.getCurrentServer()
+        //? if >=1.21 {
+        /*val serverDir = server?.serverDirectory?.toFile() ?: java.io.File(".")*/
+        //?} else {
         val serverDir = server?.serverDirectory ?: java.io.File(".")
+        //?}
         CustomTrackManager.scan(serverDir)
     }
 
@@ -1533,7 +1596,7 @@ object MusicManager {
             trackId = "", startPositionMs = 0, serverTimeMs = 0,
             action = MusicSyncPacket.Action.OPEN_GUI
         )
-        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+        PacketHandler.sendToPlayer(player, packet)
     }
 
     fun getCustomTracks(): List<String> = CustomTrackManager.getTrackNames()
@@ -1542,7 +1605,7 @@ object MusicManager {
         val manifest = CustomTrackManager.getManifest()
         if (manifest.isEmpty()) return
         val packet = dev.mcrib884.musync.network.TrackManifestPacket(manifest)
-        PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+        PacketHandler.sendToPlayer(player, packet)
         logger.info("Sent track manifest to ${player.name.string}: ${manifest.size} tracks")
     }
 
@@ -1583,7 +1646,7 @@ object MusicManager {
                                 trackName = name, chunkIndex = i, totalChunks = totalChunks, data = chunk
                             )
                             try {
-                                PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+                                PacketHandler.sendToPlayer(player, packet)
                             } catch (e: Exception) {
                                 logger.error("Failed to send chunk $i/$totalChunks of $name: ${e.message}")
                                 return@submit
@@ -1622,7 +1685,7 @@ object MusicManager {
                     val packet = dev.mcrib884.musync.network.CustomTrackDataPacket(
                         trackName = trackName, chunkIndex = i, totalChunks = totalChunks, data = chunk
                     )
-                    PacketHandler.INSTANCE.send(PacketDistributor.PLAYER.with { player }, packet)
+                    PacketHandler.sendToPlayer(player, packet)
                 }
             }
         } catch (e: Exception) {
@@ -1632,7 +1695,11 @@ object MusicManager {
 
     fun readNextFile(): List<String> {
         return try {
+            //? if >=1.21 {
+            /*val runDir = ServerLifecycleHooks.getCurrentServer()?.serverDirectory?.toFile() ?: File(".")*/
+            //?} else {
             val runDir = ServerLifecycleHooks.getCurrentServer()?.serverDirectory ?: File(".")
+            //?}
             val nextFile = File(runDir, "next.txt")
             if (nextFile.exists()) nextFile.readLines().filter { it.isNotBlank() } else emptyList()
         } catch (_: Exception) { emptyList() }

@@ -11,10 +11,21 @@ import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import net.minecraft.resources.ResourceLocation
 import net.minecraft.server.level.ServerPlayer
-import net.minecraftforge.network.PacketDistributor
+//? if neoforge {
+/*import net.minecraft.core.registries.BuiltInRegistries*/
+//?} else {
 import net.minecraftforge.registries.ForgeRegistries
+//?}
 
 object MuSyncCommand {
+
+    //? if neoforge {
+    /*private fun soundEventKeys() = BuiltInRegistries.SOUND_EVENT.keySet()
+    private fun soundEventContains(key: ResourceLocation) = BuiltInRegistries.SOUND_EVENT.containsKey(key)*/
+    //?} else {
+    private fun soundEventKeys() = ForgeRegistries.SOUND_EVENTS.keys
+    private fun soundEventContains(key: ResourceLocation) = ForgeRegistries.SOUND_EVENTS.containsKey(key)
+    //?}
 
     private val TRACK_MAP = mutableMapOf(
 
@@ -91,7 +102,7 @@ object MuSyncCommand {
 
         dev.mcrib884.musync.server.MusicManager.getCustomTracks().forEach { allTracks.add(it) }
 
-        ForgeRegistries.SOUND_EVENTS.keys.forEach { loc ->
+        soundEventKeys().forEach { loc ->
             if (loc.path.contains("music") || loc.path.startsWith("music_disc.")) {
                 allTracks.add(loc.toString())
             }
@@ -180,7 +191,7 @@ object MuSyncCommand {
                                     }
 
                                     val resLoc = ResourceLocation.tryParse(input)
-                                    if (resLoc != null && ForgeRegistries.SOUND_EVENTS.containsKey(resLoc)) {
+                                    if (resLoc != null && soundEventContains(resLoc)) {
                                         dev.mcrib884.musync.server.MusicManager.playTrack(resLoc.toString())
                                         //? if >=1.20 {
                                         ctx.source.sendSuccess(
@@ -338,7 +349,7 @@ object MuSyncCommand {
                                     }
 
                                     val resLoc = ResourceLocation.tryParse(input)
-                                    if (resLoc != null && ForgeRegistries.SOUND_EVENTS.containsKey(resLoc)) {
+                                    if (resLoc != null && soundEventContains(resLoc)) {
                                         dev.mcrib884.musync.server.MusicManager.addToQueue(resLoc.toString())
                                         //? if >=1.20 {
                                         ctx.source.sendSuccess(
@@ -743,7 +754,7 @@ object MuSyncCommand {
             result.add(key to displayName)
         }
 
-        ForgeRegistries.SOUND_EVENTS.keys.forEach { loc ->
+        soundEventKeys().forEach { loc ->
             val fullId = loc.toString()
             val path = loc.path
 
@@ -757,7 +768,7 @@ object MuSyncCommand {
         try {
             val mc = net.minecraft.client.Minecraft.getInstance()
             val soundManager = mc.soundManager
-            ForgeRegistries.SOUND_EVENTS.keys.forEach { loc ->
+            soundEventKeys().forEach { loc ->
                 if (!loc.path.contains("music") && !loc.path.startsWith("music_disc.")) return@forEach
                 val fullEventId = loc.toString()
                 val poolName = DISPLAY_NAMES[fullEventId] ?: formatDiscoveredTrackName(fullEventId)

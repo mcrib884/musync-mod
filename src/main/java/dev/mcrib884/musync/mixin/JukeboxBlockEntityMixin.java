@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(JukeboxBlockEntity.class)
 public abstract class JukeboxBlockEntityMixin {
 
-    //? if >=1.20 {
+    //? if >=1.20 && <1.21 {
     @Inject(method = "startPlaying", at = @At("TAIL"))
     private void musync$onStartPlaying(CallbackInfo ci) {
         JukeboxBlockEntity self = (JukeboxBlockEntity) (Object) this;
@@ -40,7 +40,7 @@ public abstract class JukeboxBlockEntityMixin {
             JukeboxTracker.INSTANCE.onJukeboxStopPlaying(level.dimension(), pos);
         }
     }
-    //?} else {
+    //? } else if <1.20 {
     /*
     @Inject(method = "setRecord", at = @At("TAIL"))
     private void musync$onSetRecord(net.minecraft.world.item.ItemStack stack, CallbackInfo ci) {
@@ -66,5 +66,6 @@ public abstract class JukeboxBlockEntityMixin {
         }
     }
     */
-    //?}
+    //? }
+    // >=1.21: JukeboxBlockEntity was refactored — no injection points available yet
 }
