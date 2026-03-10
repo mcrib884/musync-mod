@@ -7,6 +7,8 @@
 	"client": [
 		"ChannelMixin",
 		"JukeboxBlockEntityMixin",
+		"MinecraftMusicMixin",
+		"MusicManagerAccessor",
 		"MusicManagerMixin"
 	],
 	"injectors": {

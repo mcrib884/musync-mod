@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.StringArgumentType
 import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.suggestion.SuggestionProvider
 import dev.mcrib884.musync.network.*
+import dev.mcrib884.musync.entityLevel
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
@@ -63,8 +64,12 @@ object MuSyncCommand {
         "warmth" to "minecraft:music.nether.nether_wastes|music/game/nether/warmth",
         "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes|music/game/nether/ballad_of_the_cats",
 
+        //? if >=1.21 {
+        /*"the_end" to "minecraft:music.end|music/game/end/the_end",*/
+        //?} else {
         "the_end" to "minecraft:music.end|music/game/end/end",
-        "boss" to "minecraft:music.end|music/game/end/boss",
+        //?}
+        "boss" to "minecraft:music.dragon|music/game/end/boss",
         "alpha" to "minecraft:music.credits|music/game/end/credits",
 
         "stand_tall" to "minecraft:music.game|music/game/stand_tall",
@@ -622,7 +627,10 @@ object MuSyncCommand {
                             Commands.literal("reset")
                                 .executes { ctx ->
                                     if (isDownloading(ctx)) return@executes 0
-                                    dev.mcrib884.musync.server.MusicManager.resetCustomDelay()
+                                    val dim = (ctx.source.entity as? net.minecraft.server.level.ServerPlayer)?.let {
+                                        it.entityLevel().dimension().location().toString()
+                                    } ?: "minecraft:overworld"
+                                    dev.mcrib884.musync.server.MusicManager.resetCustomDelay(dim)
                                     //? if >=1.20 {
                                     ctx.source.sendSuccess(
                                         { Component.literal("Delay reset to vanilla defaults (per-pool timing)") },
@@ -651,7 +659,12 @@ object MuSyncCommand {
                                                 )
                                                 return@executes 0
                                             }
-                                            dev.mcrib884.musync.server.MusicManager.setCustomDelay(min, max)
+                                            dev.mcrib884.musync.server.MusicManager.setCustomDelay(
+                                                (ctx.source.entity as? net.minecraft.server.level.ServerPlayer)?.let {
+                                                    it.entityLevel().dimension().location().toString()
+                                                } ?: "minecraft:overworld",
+                                                min, max
+                                            )
                                             //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Custom delay set: $min-$max ticks (${formatTickTime(min)}-${formatTickTime(max)})") },
@@ -742,9 +755,12 @@ object MuSyncCommand {
         val result = mutableListOf<Pair<String, String>>()
 
         val knownSpecificSounds = mutableSetOf<String>()
+        val aliasedSoundEvents = mutableSetOf<String>()
         for (value in TRACK_MAP.values) {
+            val parts = value.split("|", limit = 2)
+            aliasedSoundEvents.add(parts[0])
             if (value.contains("|")) {
-                val oggPath = value.split("|", limit = 2)[1]
+                val oggPath = parts[1]
                 knownSpecificSounds.add("minecraft:$oggPath")
             }
         }
@@ -759,6 +775,21 @@ object MuSyncCommand {
             val path = loc.path
 
             if (path.contains("music") || path.startsWith("music_disc.")) {
+                var skipPoolEntry = false
+                if (fullId in aliasedSoundEvents) {
+                    try {
+                        val events = net.minecraft.client.Minecraft.getInstance().soundManager.getSoundEvent(loc)
+                        val resolvedFiles = linkedSetOf<String>()
+                        events?.list?.forEach { weighted ->
+                            val sound = weighted.getSound(net.minecraft.util.RandomSource.create())
+                            if (sound.type != net.minecraft.client.resources.sounds.Sound.Type.FILE) return@forEach
+                            resolvedFiles.add("${sound.location.namespace}:${sound.location.path}")
+                        }
+                        skipPoolEntry = resolvedFiles.size == 1 && resolvedFiles.first() in knownSpecificSounds
+                    } catch (_: Exception) { }
+                }
+                if (skipPoolEntry) return@forEach
+
                 val displayName = DISPLAY_NAMES[fullId]
                     ?: formatDiscoveredTrackName(fullId)
                 result.add(fullId to displayName)

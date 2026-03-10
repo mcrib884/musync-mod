@@ -48,16 +48,18 @@ object MusicManager {
     private var clientReportedEnd: Boolean = false
     private const val TRACK_TIMEOUT_MS = 20 * 60 * 1000L
     private const val TRACK_TIMEOUT_BUFFER_MS = 15_000L
+    private const val MIN_VALID_TRACK_FINISH_MS = 3000L
 
     private data class OpPlayerState(val musicEvent: String, val lastChanged: Long)
     private val opPlayerStates = mutableMapOf<java.util.UUID, OpPlayerState>()
     private var lastDominantMusicEvent: String? = null
     private var lastDragonFightActive: Boolean = false
 
-    private var customMinDelay: Int? = null
-    private var customMaxDelay: Int? = null
+    private val dimensionDelays = mutableMapOf<String, Pair<Int, Int>>()
     private var opStateCheckCounter: Int = 0
     private val OP_STATE_CHECK_INTERVAL = 20
+    private var dimBiomeCheckCounter: Int = 0
+    private val DIM_BIOME_CHECK_INTERVAL = 20
 
     private val lastSeekTime = mutableMapOf<java.util.UUID, Long>()
     private val SEEK_THROTTLE_MS = 200L
@@ -89,12 +91,13 @@ object MusicManager {
         var recent: MutableList<String> = mutableListOf()
         var clientEnd: Boolean = false
         var active: Boolean = false
+        var lastMusicEvent: String? = null
 
         fun reset() {
             track = null; startTime = 0; duration = 0; playing = false
             paused = false; pausedPos = 0; specific = ""; resolved = null
             waiting = false; ticksSince = 0; delayTicks = 0
-            recent.clear(); clientEnd = false; active = false
+            recent.clear(); clientEnd = false; active = false; lastMusicEvent = null
         }
     }
 
@@ -123,15 +126,22 @@ object MusicManager {
     )
     private val DEFAULT_TIMING = MusicTiming(12000, 24000)
 
+    private fun isVanillaEndFallback(player: ServerPlayer, musicEvent: String): Boolean {
+        return player.entityLevel().dimension().location().toString() == "minecraft:the_end" &&
+            musicEvent == "minecraft:music.end"
+    }
+
     private fun getBiomeMusicEvent(player: ServerPlayer): String? {
         return try {
             val music = player.entityLevel().getBiome(player.blockPosition()).value()
                 .getBackgroundMusic().orElse(null) ?: return null
+            val eventId =
             //? if >=1.20 {
             music.event.value().location.toString()
             //?} else {
             /*music.event.location.toString()*/
             //?}
+            if (isVanillaEndFallback(player, eventId)) null else eventId
         } catch (_: Exception) { null }
     }
 
@@ -139,6 +149,13 @@ object MusicManager {
         return try {
             val music = player.entityLevel().getBiome(player.blockPosition()).value()
                 .getBackgroundMusic().orElse(null) ?: return null
+            val eventId =
+            //? if >=1.20 {
+            music.event.value().location.toString()
+            //?} else {
+            /*music.event.location.toString()*/
+            //?}
+            if (isVanillaEndFallback(player, eventId)) return null
             MusicTiming(music.minDelay, music.maxDelay, music.replaceCurrentMusic())
         } catch (_: Exception) { null }
     }
@@ -160,7 +177,7 @@ object MusicManager {
         if (!isPlayerOp(player)) return
 
         val playerDim = player.entityLevel().dimension().location().toString()
-        val forcePrimaryControl = (currentMode == MusicStatusPacket.PlayMode.PLAYLIST || userPlaylist.isNotEmpty()) &&
+        val forcePrimaryControl = isInPriorityMode() &&
             packet.action in setOf(
                 MusicControlPacket.Action.STOP,
                 MusicControlPacket.Action.SKIP,
@@ -218,14 +235,15 @@ object MusicManager {
             MusicControlPacket.Action.CLEAR_QUEUE -> clearQueue()
             MusicControlPacket.Action.SET_DELAY -> {
                 val raw = packet.trackId ?: "reset"
+                val dim = packet.targetDim ?: player.entityLevel().dimension().location().toString()
                 if (raw == "reset") {
-                    resetCustomDelay()
+                    resetCustomDelay(dim)
                 } else {
                     val parts = raw.split(":")
                     if (parts.size == 2) {
                         val min = parts[0].toIntOrNull()
                         val max = parts[1].toIntOrNull()
-                        if (min != null && max != null && max >= min) setCustomDelay(min, max)
+                        if (min != null && max != null && max >= min) setCustomDelay(dim, min, max)
                     }
                 }
                 broadcastStatus()
@@ -420,6 +438,12 @@ object MusicManager {
             checkOpPlayerStates()
         }
 
+        dimBiomeCheckCounter++
+        if (dimBiomeCheckCounter >= DIM_BIOME_CHECK_INTERVAL) {
+            dimBiomeCheckCounter = 0
+            checkDimBiomeChanges()
+        }
+
         if (clientReportedEnd) {
             clientReportedEnd = false
             onTrackFinished()
@@ -526,8 +550,9 @@ object MusicManager {
 
     private fun scheduleNextAutonomousTrack() {
         val musicEvent = determineMusicEventForPlayers()
-        val timing = if (customMinDelay != null && customMaxDelay != null) {
-            MusicTiming(customMinDelay!!, customMaxDelay!!)
+        val dimDelay = dimensionDelays["minecraft:overworld"]
+        val timing = if (dimDelay != null) {
+            MusicTiming(dimDelay.first, dimDelay.second)
         } else {
             getOverworldBiomeTiming() ?: MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
         }
@@ -587,7 +612,7 @@ object MusicManager {
                     if (dragons.isNotEmpty()) return "minecraft:music.dragon"
                 }
             } catch (_: Exception) {}
-            return "minecraft:music.end"
+            return getBiomeMusicEvent(player) ?: "minecraft:music.end"
         }
 
         if (player.isUnderWater) return "minecraft:music.under_water"
@@ -675,7 +700,8 @@ object MusicManager {
                     }
                 }
             } else {
-                if (isPriority || isDimensionChange) {
+                val newTiming = getTimingForEvent(newMusicEvent)
+                if (isPriority || isDimensionChange || newTiming.replacesCurrent) {
                     if (currentMode == MusicStatusPacket.PlayMode.AUTONOMOUS || currentMode == MusicStatusPacket.PlayMode.PLAYLIST) {
                         waitingForNextTrack = false
                         ticksSinceLastMusic = 0
@@ -686,6 +712,72 @@ object MusicManager {
             }
             broadcastStatus()
         }
+    }
+
+    private fun getTimingForEvent(musicEvent: String): MusicTiming {
+        val server = ServerLifecycleHooks.getCurrentServer() ?: return MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
+        for (player in server.playerList.players) {
+            if (!isPlayerOp(player)) continue
+            val biomeEvent = getBiomeMusicEvent(player)
+            if (biomeEvent == musicEvent) {
+                return getBiomeMusicTiming(player) ?: continue
+            }
+        }
+        return MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
+    }
+
+    private fun getTimingForDimEvent(stream: DimensionStream, musicEvent: String): MusicTiming {
+        val server = ServerLifecycleHooks.getCurrentServer() ?: return MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
+        val dimPlayers = server.playerList.players.filter {
+            it.entityLevel().dimension().location().toString() == stream.dimensionId
+        }
+        for (player in dimPlayers) {
+            val biomeEvent = getBiomeMusicEvent(player)
+            if (biomeEvent == musicEvent) {
+                return getBiomeMusicTiming(player) ?: continue
+            }
+        }
+        return MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
+    }
+
+    private fun checkDimBiomeChanges() {
+        for (stream in dimensionStreams.values) {
+            if (!stream.active || stream.paused) continue
+            val newEvent = determineDimMusicEvent(stream)
+            if (newEvent != stream.lastMusicEvent) {
+                stream.lastMusicEvent = newEvent
+                val timing = getTimingForDimEvent(stream, newEvent)
+                val deferLiveReplace = shouldDeferLiveDimReplace(stream, newEvent)
+                if (!timing.replacesCurrent || deferLiveReplace) continue
+
+                if (stream.playing && stream.track != null && newEvent != stream.track) {
+                    logger.info("Biome music change in ${stream.dimensionId}: ${stream.track} -> $newEvent (replacesCurrent)")
+                    broadcastDimSync(stream, MusicSyncPacket.Action.STOP)
+                    stream.recent.add(stream.track!!)
+                    if (stream.recent.size > maxRecentTracks) stream.recent.removeAt(0)
+                    stream.track = null
+                    stream.playing = false
+                    stream.waiting = false
+                    stream.ticksSince = 0
+                    stream.delayTicks = 0
+                    dimPlayTrack(stream, newEvent)
+                } else if (!stream.playing && stream.track == null && stream.waiting) {
+                    logger.info("Biome music override in ${stream.dimensionId} during cooldown: $newEvent (replacesCurrent)")
+                    stream.waiting = false
+                    stream.ticksSince = 0
+                    stream.delayTicks = 0
+                    dimPlayTrack(stream, newEvent)
+                }
+            }
+        }
+    }
+
+    private fun shouldDeferLiveDimReplace(stream: DimensionStream, newEvent: String): Boolean {
+        if (!stream.playing || stream.track == null) return false
+        if (stream.dimensionId != "minecraft:the_end") return false
+        if (!newEvent.startsWith("betterend:")) return false
+        if (newEvent == "minecraft:music.dragon" || newEvent == "minecraft:music.credits") return false
+        return true
     }
 
     private fun determineDominantMusicEvent(): String {
@@ -885,8 +977,9 @@ object MusicManager {
 
     private fun dimScheduleNext(stream: DimensionStream) {
         val musicEvent = determineDimMusicEvent(stream)
-        val timing = if (customMinDelay != null && customMaxDelay != null) {
-            MusicTiming(customMinDelay!!, customMaxDelay!!)
+        val dimDelay = dimensionDelays[stream.dimensionId]
+        val timing = if (dimDelay != null) {
+            MusicTiming(dimDelay.first, dimDelay.second)
         } else {
             getDimMusicTiming(stream) ?: MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
         }
@@ -1313,6 +1406,7 @@ object MusicManager {
 
     private fun broadcastStatusToPlayer(player: ServerPlayer, dimensionIdOverride: String? = null) {
         val dim = dimensionIdOverride ?: player.entityLevel().dimension().location().toString()
+        val priorityActive = isInPriorityMode()
         val dimStream = dimensionStreams.values.firstOrNull { shouldPlayerHearDimForDim(player, dim, it) }
 
         val currentPosition = if (dimStream != null) {
@@ -1336,12 +1430,13 @@ object MusicManager {
             isPlaying = if (dimStream != null) (dimStream.playing && !dimStream.paused) else (isPlaying && !isPaused),
             queue = userPlaylist.toList(),
             mode = if (dimStream != null) MusicStatusPacket.PlayMode.AUTONOMOUS else currentMode,
+            priorityActive = priorityActive,
             resolvedName = if (dimStream != null) (dimStream.resolved ?: "") else (resolvedTrackName ?: ""),
             waitingForNextTrack = if (dimStream != null) dimStream.waiting else waitingForNextTrack,
             ticksSinceLastMusic = if (dimStream != null) dimStream.ticksSince else ticksSinceLastMusic,
             nextMusicDelayTicks = if (dimStream != null) dimStream.delayTicks else nextMusicDelayTicks,
-            customMinDelay = customMinDelay ?: -1,
-            customMaxDelay = customMaxDelay ?: -1,
+            customMinDelay = getDelayForPlayerDim(player, dimensionIdOverride).first,
+            customMaxDelay = getDelayForPlayerDim(player, dimensionIdOverride).second,
             syncOverworld = player.uuid in syncOverworld,
             activeDimensions = getActiveDimensionStatuses()
         )
@@ -1500,6 +1595,11 @@ object MusicManager {
                         logger.debug("Ignoring TRACK_FINISHED from non-authority ${player.name.string}")
                         return
                     }
+                    val elapsed = System.currentTimeMillis() - trackStartTime
+                    if (elapsed < MIN_VALID_TRACK_FINISH_MS) {
+                        logger.debug("Ignoring early TRACK_FINISHED for primary track ${packet.trackId} after ${elapsed}ms")
+                        return
+                    }
                     logger.info("Client reported track finished: ${packet.trackId}")
                     clientReportedEnd = true
                 } else {
@@ -1508,6 +1608,11 @@ object MusicManager {
                             val dimAuth = getAuthorityForDim(stream)
                             if (dimAuth != null && player.uuid != dimAuth) {
                                 logger.debug("Ignoring dim TRACK_FINISHED from non-authority ${player.name.string}")
+                                return
+                            }
+                            val elapsed = System.currentTimeMillis() - stream.startTime
+                            if (elapsed < MIN_VALID_TRACK_FINISH_MS) {
+                                logger.debug("Ignoring early TRACK_FINISHED for ${stream.dimensionId} track ${packet.trackId} after ${elapsed}ms")
                                 return
                             }
                             logger.info("Client reported ${stream.dimensionId} track finished: ${packet.trackId}")
@@ -1528,6 +1633,7 @@ object MusicManager {
         val serverDir = server?.serverDirectory ?: java.io.File(".")
         //?}
         CustomTrackManager.scan(serverDir)
+        loadDimensionDelays()
     }
 
     fun onServerStopping(event: ServerStoppingEvent) {
@@ -1541,6 +1647,7 @@ object MusicManager {
         lastDominantMusicEvent = null
         lastDragonFightActive = false
         opStateCheckCounter = 0
+        dimBiomeCheckCounter = 0
         recentTracks.clear()
         userPlaylist.clear()
         lastSeekTime.clear()
@@ -1550,8 +1657,7 @@ object MusicManager {
         selectedListenDimensions.clear()
         playerJoinOrder.clear()
         wasInPriority = false
-        customMinDelay = null
-        customMaxDelay = null
+        saveDimensionDelays()
         currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
     }
 
@@ -1576,19 +1682,76 @@ object MusicManager {
             "waitingForNextTrack" to waitingForNextTrack,
             "ticksSinceLastMusic" to ticksSinceLastMusic,
             "nextMusicDelayTicks" to nextMusicDelayTicks,
-            "customMinDelay" to (customMinDelay ?: -1),
-            "customMaxDelay" to (customMaxDelay ?: -1)
+            "customMinDelay" to (dimensionDelays["minecraft:overworld"]?.first ?: -1),
+            "customMaxDelay" to (dimensionDelays["minecraft:overworld"]?.second ?: -1)
         )
     }
 
-    fun setCustomDelay(minTicks: Int, maxTicks: Int) {
-        customMinDelay = minTicks
-        customMaxDelay = maxTicks
+    fun setCustomDelay(dimensionId: String, minTicks: Int, maxTicks: Int) {
+        dimensionDelays[dimensionId] = Pair(minTicks, maxTicks)
+        saveDimensionDelays()
     }
 
-    fun resetCustomDelay() {
-        customMinDelay = null
-        customMaxDelay = null
+    fun resetCustomDelay(dimensionId: String) {
+        dimensionDelays.remove(dimensionId)
+        saveDimensionDelays()
+    }
+
+    private fun getDelayForPlayerDim(player: ServerPlayer, dimOverride: String?): Pair<Int, Int> {
+        val dim = dimOverride ?: selectedListenDimensions[player.uuid] ?: player.entityLevel().dimension().location().toString()
+        val delay = dimensionDelays[dim]
+        return if (delay != null) Pair(delay.first, delay.second) else Pair(-1, -1)
+    }
+
+    private fun getDelaysFile(): java.io.File {
+        val server = ServerLifecycleHooks.getCurrentServer()
+        //? if >=1.21 {
+        /*val serverDir = server?.serverDirectory?.toFile() ?: java.io.File(".")*/
+        //?} else {
+        val serverDir = server?.serverDirectory ?: java.io.File(".")
+        //?}
+        val musyncDir = java.io.File(serverDir, "musync")
+        if (!musyncDir.exists()) musyncDir.mkdirs()
+        return java.io.File(musyncDir, "dimension_delays.properties")
+    }
+
+    private fun saveDimensionDelays() {
+        try {
+            val file = getDelaysFile()
+            val props = java.util.Properties()
+            for ((dim, delay) in dimensionDelays) {
+                props.setProperty(dim, "${delay.first},${delay.second}")
+            }
+            file.outputStream().use { props.store(it, "MuSync per-dimension delay overrides (ticks)") }
+        } catch (e: Exception) {
+            logger.warn("Failed to save dimension delays: ${e.message}")
+        }
+    }
+
+    private fun loadDimensionDelays() {
+        try {
+            val file = getDelaysFile()
+            if (!file.exists()) return
+            val props = java.util.Properties()
+            file.inputStream().use { props.load(it) }
+            dimensionDelays.clear()
+            for (key in props.stringPropertyNames()) {
+                val value = props.getProperty(key) ?: continue
+                val parts = value.split(",")
+                if (parts.size == 2) {
+                    val min = parts[0].trim().toIntOrNull()
+                    val max = parts[1].trim().toIntOrNull()
+                    if (min != null && max != null && max >= min) {
+                        dimensionDelays[key] = Pair(min, max)
+                    }
+                }
+            }
+            if (dimensionDelays.isNotEmpty()) {
+                logger.info("Loaded ${dimensionDelays.size} dimension delay override(s)")
+            }
+        } catch (e: Exception) {
+            logger.warn("Failed to load dimension delays: ${e.message}")
+        }
     }
 
     fun sendOpenGui(player: ServerPlayer) {

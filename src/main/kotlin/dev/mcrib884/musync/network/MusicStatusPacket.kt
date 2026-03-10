@@ -18,6 +18,7 @@ data class MusicStatusPacket(
     val isPlaying: Boolean,
     val queue: List<String>,
     val mode: PlayMode,
+    val priorityActive: Boolean = false,
     val resolvedName: String = "",
     val waitingForNextTrack: Boolean = false,
     val ticksSinceLastMusic: Int = 0,
@@ -64,6 +65,7 @@ data class MusicStatusPacket(
             buf.writeBoolean(packet.isPlaying)
             buf.writeCollection(packet.queue, FriendlyByteBuf::writeUtf)
             buf.writeEnum(packet.mode)
+            buf.writeBoolean(packet.priorityActive)
             buf.writeUtf(packet.resolvedName)
             buf.writeBoolean(packet.waitingForNextTrack)
             buf.writeInt(packet.ticksSinceLastMusic)
@@ -94,6 +96,7 @@ data class MusicStatusPacket(
                 isPlaying = buf.readBoolean(),
                 queue = buf.readList(FriendlyByteBuf::readUtf),
                 mode = buf.readEnum(PlayMode::class.java),
+                priorityActive = buf.readBoolean(),
                 resolvedName = buf.readUtf(),
                 waitingForNextTrack = buf.readBoolean(),
                 ticksSinceLastMusic = buf.readInt(),

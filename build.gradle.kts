@@ -85,7 +85,11 @@ dependencies {
 		implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
 	} else {
 		"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
-		implementation("thedarkcolour:kotlinforforge:3.12.0")
+		if (mcVersion.startsWith("1.20")) {
+			implementation("thedarkcolour:kotlinforforge:4.12.0")
+		} else {
+			implementation("thedarkcolour:kotlinforforge:3.12.0")
+		}
 	}
 }
 

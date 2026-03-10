@@ -1,6 +1,7 @@
 package dev.mcrib884.musync.client
 
 import dev.mcrib884.musync.entityLevel
+import dev.mcrib884.musync.mixin.MusicManagerAccessor
 import dev.mcrib884.musync.network.*
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
@@ -12,10 +13,14 @@ import net.minecraft.core.registries.BuiltInRegistries
 /*import net.minecraft.core.Registry*/
 //?}
 import org.lwjgl.openal.AL10
+import java.util.concurrent.Executors
 
 object ClientMusicPlayer {
     private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val resolvedSoundCache = mutableMapOf<String, Pair<String, String>>()
+    private val loadExecutor = Executors.newSingleThreadExecutor { task ->
+        Thread(task, "MuSync-TrackLoader").apply { isDaemon = true }
+    }
+    private var lastResolvedSound: String? = null
     private var currentTrack: String? = null
     private var trackStartTime: Long = 0
     private var isPlaying: Boolean = false
@@ -36,26 +41,79 @@ object ClientMusicPlayer {
     private var lastMasterVol: Float = -1f
 
     private var gamePaused: Boolean = false
+    private var isLoading: Boolean = false
+    private var loadingTrack: String? = null
+    private var loadingPositionMs: Long = 0
+    private var loadToken: Long = 0
+    private var pendingSyncPacket: MusicSyncPacket? = null
+
+    private data class PreparedLoad(
+        val trackId: String,
+        val startPositionMs: Long,
+        val specificSound: String,
+        val startPaused: Boolean,
+        val resolvedName: String,
+        val preparedAudio: CustomTrackPlayer.PreparedAudio?
+    )
+
+    private fun suppressVanillaMusic(mc: Minecraft = Minecraft.getInstance()) {
+        mc.soundManager.stop(null, SoundSource.MUSIC)
+
+        val managedMusicInstances = mc.soundManager.soundEngine.instanceToChannel.keys
+            .filter { it.source == SoundSource.MUSIC }
+            .toList()
+        managedMusicInstances.forEach { instance ->
+            mc.soundManager.stop(instance)
+        }
+
+        val accessor = mc.musicManager as? MusicManagerAccessor
+        if (accessor != null) {
+            val currentMusic = accessor.currentMusic
+            if (currentMusic != null) {
+                mc.soundManager.stop(currentMusic)
+                accessor.currentMusic = null
+            }
+            accessor.setNextSongDelay(Int.MAX_VALUE)
+        }
+    }
 
     fun handleSyncPacket(packet: MusicSyncPacket) {
         musyncActive = true
         val mc = Minecraft.getInstance()
         mc.execute {
+            suppressVanillaMusic(mc)
             when (packet.action) {
                 MusicSyncPacket.Action.PLAY -> {
-                    playMusic(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    if (isLoading) {
+                        pendingSyncPacket = packet
+                    } else {
+                        playMusic(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    }
                 }
                 MusicSyncPacket.Action.STOP -> {
+                    clearLoadingState(cancelCurrentLoad = true, clearPending = true)
                     stopMusic()
                 }
                 MusicSyncPacket.Action.PAUSE -> {
-                    applyPausedSync(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    if (isLoading) {
+                        pendingSyncPacket = packet
+                    } else {
+                        applyPausedSync(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    }
                 }
                 MusicSyncPacket.Action.RESUME -> {
-                    applyResumeSync(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    if (isLoading) {
+                        pendingSyncPacket = packet
+                    } else {
+                        applyResumeSync(packet.trackId, packet.startPositionMs, packet.specificSound)
+                    }
                 }
                 MusicSyncPacket.Action.SKIP -> {
-                    stopMusic()
+                    if (isLoading) {
+                        pendingSyncPacket = packet
+                    } else {
+                        stopMusic()
+                    }
                 }
                 MusicSyncPacket.Action.OPEN_GUI -> {
 
@@ -64,139 +122,156 @@ object ClientMusicPlayer {
         }
     }
 
-    private fun playMusic(trackId: String, startPositionMs: Long, specificSound: String = "") {
+    private fun clearLoadingState(cancelCurrentLoad: Boolean, clearPending: Boolean) {
+        if (cancelCurrentLoad) loadToken++
+        isLoading = false
+        loadingTrack = null
+        loadingPositionMs = 0
+        if (clearPending) pendingSyncPacket = null
+    }
+
+    private fun processDeferredPacketIfReady() {
+        if (isLoading) return
+        val packet = pendingSyncPacket ?: return
+        pendingSyncPacket = null
+        handleSyncPacket(packet)
+    }
+
+    private fun startAsyncLoad(trackId: String, startPositionMs: Long, specificSound: String, startPaused: Boolean) {
         val mc = Minecraft.getInstance()
-
         stopMusicInternal()
-
-        if (trackId.startsWith("custom:")) {
-            playCustomTrack(trackId, startPositionMs)
-            return
-        }
-
-        val oggPath: String
-        var oggNamespace = "minecraft"
-        if (specificSound.isNotEmpty()) {
-
-            if (specificSound.contains(":")) {
-                oggNamespace = specificSound.substringBefore(":")
-                oggPath = specificSound.substringAfter(":")
-            } else {
-                oggPath = specificSound
-            }
-        } else {
-            val resolved = resolveSoundPath(trackId, mc) ?: return
-            oggNamespace = resolved.first
-            oggPath = resolved.second
-        }
 
         currentTrack = trackId
         trackStartTime = System.currentTimeMillis() - startPositionMs
-        isPlaying = true
+        isPlaying = false
         isPaused = false
-        playStartTime = System.currentTimeMillis()
+        pausedPosition = if (startPaused) startPositionMs else 0
+        playStartTime = 0
 
-        val source = CustomTrackPlayer.playFromResource(oggPath, startPositionMs, oggNamespace)
-        if (source == -1) {
-            logger.error("Failed to play: $oggNamespace:$oggPath")
-            val failedTrack = currentTrack
-            isPlaying = false
-            currentTrack = null
-            if (failedTrack != null) {
-                PacketHandler.sendToServer(MusicClientInfoPacket(
-                    action = MusicClientInfoPacket.Action.TRACK_FINISHED,
-                    trackId = failedTrack,
-                    durationMs = 0
-                ))
+        isLoading = true
+        loadingTrack = trackId
+        loadingPositionMs = startPositionMs
+        val token = ++loadToken
+
+        val specific = specificSound
+        loadExecutor.submit {
+            val prepared = if (trackId.startsWith("custom:")) {
+                val fileName = trackId.removePrefix("custom:")
+                val trackData = CustomTrackCache.get(fileName)
+                if (trackData == null) {
+                    logger.warn("Custom track data not cached: $fileName")
+                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
+                } else {
+                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, CustomTrackPlayer.decode(trackData))
+                }
+            } else {
+                val resolved = if (specific.isNotEmpty()) {
+                    if (specific.contains(":")) {
+                        specific.substringBefore(":") to specific.substringAfter(":")
+                    } else {
+                        "minecraft" to specific
+                    }
+                } else {
+                    resolveSoundPath(trackId, mc)
+                }
+
+                if (resolved == null) {
+                    logger.warn("Failed to resolve sound path for $trackId")
+                    PreparedLoad(trackId, startPositionMs, specific, startPaused, "", null)
+                } else {
+                    val resolvedName = "${resolved.first}:${resolved.second}"
+                    PreparedLoad(
+                        trackId,
+                        startPositionMs,
+                        specific,
+                        startPaused,
+                        resolvedName,
+                        CustomTrackPlayer.loadResourceAudio(resolved.second, resolved.first)
+                    )
+                }
             }
-            return
-        }
 
-        customTrackSource = source
-        logger.info("Playing: $oggNamespace:$oggPath" + if (startPositionMs > 0) " (from ${startPositionMs}ms)" else "")
+            mc.execute {
+                if (token != loadToken) return@execute
 
-        val durationMs = OggDurationReader.getDurationMs(
-            //? if >=1.21 {
-            /*ResourceLocation.fromNamespaceAndPath(oggNamespace, oggPath)*/
-            //?} else {
-            ResourceLocation(oggNamespace, oggPath)
-            //?}
-        )
-        if (durationMs > 0) {
-            val infoPacket = MusicClientInfoPacket(
-                action = MusicClientInfoPacket.Action.REPORT_DURATION,
-                trackId = trackId,
-                durationMs = durationMs,
-                resolvedName = "$oggNamespace:$oggPath"
-            )
-            PacketHandler.sendToServer(infoPacket)
+                isLoading = false
+                loadingTrack = null
+                loadingPositionMs = 0
+
+                val preparedAudio = prepared.preparedAudio
+                if (preparedAudio == null) {
+                    logger.error("Failed to load track asynchronously: ${prepared.trackId}")
+                    val failedTrack = currentTrack
+                    isPlaying = false
+                    isPaused = false
+                    currentTrack = null
+                    pausedPosition = 0
+                    if (failedTrack != null) {
+                        PacketHandler.sendToServer(MusicClientInfoPacket(
+                            action = MusicClientInfoPacket.Action.TRACK_FINISHED,
+                            trackId = failedTrack,
+                            durationMs = 0
+                        ))
+                    }
+                    processDeferredPacketIfReady()
+                    return@execute
+                }
+
+                val source = CustomTrackPlayer.playPrepared(preparedAudio, prepared.startPositionMs)
+                if (source == -1) {
+                    logger.error("Failed to start prepared track: ${prepared.resolvedName}")
+                    val failedTrack = currentTrack
+                    isPlaying = false
+                    isPaused = false
+                    currentTrack = null
+                    pausedPosition = 0
+                    if (failedTrack != null) {
+                        PacketHandler.sendToServer(MusicClientInfoPacket(
+                            action = MusicClientInfoPacket.Action.TRACK_FINISHED,
+                            trackId = failedTrack,
+                            durationMs = 0
+                        ))
+                    }
+                    processDeferredPacketIfReady()
+                    return@execute
+                }
+
+                customTrackSource = source
+                trackStartTime = System.currentTimeMillis() - prepared.startPositionMs
+                playStartTime = System.currentTimeMillis()
+                isPlaying = true
+                isPaused = prepared.startPaused
+                if (prepared.startPaused) {
+                    pausedPosition = prepared.startPositionMs
+                    AL10.alSourcePause(source)
+                }
+
+                logger.info(
+                    "Playing: ${prepared.resolvedName}" +
+                        if (prepared.startPositionMs > 0) " (from ${prepared.startPositionMs}ms)" else ""
+                )
+
+                if (preparedAudio.durationMs > 0) {
+                    PacketHandler.sendToServer(MusicClientInfoPacket(
+                        action = MusicClientInfoPacket.Action.REPORT_DURATION,
+                        trackId = prepared.trackId,
+                        durationMs = preparedAudio.durationMs,
+                        resolvedName = prepared.resolvedName
+                    ))
+                }
+
+                processDeferredPacketIfReady()
+            }
         }
     }
 
-    private fun playCustomTrack(trackId: String, startPositionMs: Long) {
-        val fileName = trackId.removePrefix("custom:")
-        val trackData = CustomTrackCache.get(fileName)
-        if (trackData == null) {
-            logger.warn("Custom track data not cached: $fileName")
-            PacketHandler.sendToServer(MusicClientInfoPacket(
-                action = MusicClientInfoPacket.Action.TRACK_FINISHED,
-                trackId = trackId,
-                durationMs = 0
-            ))
-            return
-        }
-
-        currentTrack = trackId
-        trackStartTime = System.currentTimeMillis() - startPositionMs
-        isPlaying = true
-        isPaused = false
-        playStartTime = System.currentTimeMillis()
-
-        val source = CustomTrackPlayer.play(trackData)
-        if (source == -1) {
-            logger.error("Failed to play custom track: $fileName")
-            val failedTrack = currentTrack
-            isPlaying = false
-            currentTrack = null
-            if (failedTrack != null) {
-                PacketHandler.sendToServer(MusicClientInfoPacket(
-                    action = MusicClientInfoPacket.Action.TRACK_FINISHED,
-                    trackId = failedTrack,
-                    durationMs = 0
-                ))
-            }
-            return
-        }
-
-        val mc = Minecraft.getInstance()
-        val musicVol = mc.options.getSoundSourceVolume(SoundSource.MUSIC)
-        val masterVol = mc.options.getSoundSourceVolume(SoundSource.MASTER)
-        AL10.alSourcef(source, AL10.AL_GAIN, musicVol * masterVol)
-
-        if (startPositionMs > 0) {
-            AL10.alSourcef(source, org.lwjgl.openal.AL11.AL_SEC_OFFSET, startPositionMs / 1000f)
-        }
-
-        customTrackSource = source
-        logger.info("Playing custom track: $fileName" + if (startPositionMs > 0) " (from ${startPositionMs}ms)" else "")
-
-        val durationMs = CustomTrackPlayer.getDurationMs(trackData)
-        if (durationMs > 0) {
-            val infoPacket = MusicClientInfoPacket(
-                action = MusicClientInfoPacket.Action.REPORT_DURATION,
-                trackId = trackId,
-                durationMs = durationMs,
-                resolvedName = fileName
-            )
-            PacketHandler.sendToServer(infoPacket)
-        }
+    private fun playMusic(trackId: String, startPositionMs: Long, specificSound: String = "") {
+        startAsyncLoad(trackId, startPositionMs, specificSound, startPaused = false)
     }
 
     private var customTrackSource: Int = -1
 
     private fun resolveSoundPath(trackId: String, mc: Minecraft): Pair<String, String>? {
-        resolvedSoundCache[trackId]?.let { return it }
-
         val soundLocation = if (trackId.contains(":")) {
             ResourceLocation.tryParse(trackId)
         } else {
@@ -217,36 +292,43 @@ object ClientMusicPlayer {
             return null
         }
 
-        val tempInstance = SimpleSoundInstance.forMusic(soundEvent)
-        tempInstance.resolve(mc.soundManager)
-        val resolvedSound = tempInstance.sound
-        if (resolvedSound == null || resolvedSound === net.minecraft.client.sounds.SoundManager.EMPTY_SOUND) {
-            logger.warn("Could not resolve sound for: $trackId")
-            return null
-        }
-
-        val resolved = resolvedSound.location.namespace to resolvedSound.location.path
-        resolvedSoundCache[trackId] = resolved
-
         val weighedEvents = mc.soundManager.getSoundEvent(soundLocation)
-        if (weighedEvents != null) {
-            val allSounds = weighedEvents.list.mapNotNull { entry ->
-                try {
-                    val s = entry.getSound(net.minecraft.util.RandomSource.create())
-                    if (s.type == net.minecraft.client.resources.sounds.Sound.Type.FILE)
-                        "${s.location.namespace}:${s.location.path}"
-                    else null
-                } catch (_: Exception) { null }
+        val poolSize = weighedEvents?.list?.size ?: 1
+        val attempts = if (poolSize > 1) minOf(poolSize * 2, 10) else 1
+
+        var bestResolved: Pair<String, String>? = null
+        repeat(attempts) {
+            val tempInstance = SimpleSoundInstance.forMusic(soundEvent)
+            tempInstance.resolve(mc.soundManager)
+            val resolvedSound = tempInstance.sound
+            if (resolvedSound != null && resolvedSound !== net.minecraft.client.sounds.SoundManager.EMPTY_SOUND) {
+                val resolved = resolvedSound.location.namespace to resolvedSound.location.path
+                if (bestResolved == null) bestResolved = resolved
+                val key = "${resolved.first}:${resolved.second}"
+                if (key != lastResolvedSound) {
+                    if (poolSize > 1) {
+                        logger.debug("Pool '$trackId' ($poolSize sounds): resolved to $key (avoided last: $lastResolvedSound)")
+                    }
+                    lastResolvedSound = key
+                    return resolved
+                }
             }
-            logger.debug("Pool '$trackId' has ${allSounds.size} sound(s):")
-            allSounds.forEach { logger.debug("  - $it") }
         }
 
-        return resolved
+        bestResolved?.let {
+            lastResolvedSound = "${it.first}:${it.second}"
+        }
+        if (bestResolved == null) {
+            logger.warn("Could not resolve sound for: $trackId")
+        }
+        return bestResolved
     }
 
     private fun stopMusicInternal() {
+        val mc = Minecraft.getInstance()
         PausedSourceTracker.clear()
+
+        mc.soundManager.stop(null, SoundSource.MUSIC)
 
         if (customTrackSource != -1) {
             CustomTrackPlayer.stop(customTrackSource)
@@ -256,10 +338,12 @@ object ClientMusicPlayer {
 
     private fun stopMusic() {
         stopMusicInternal()
+        suppressVanillaMusic()
         currentTrack = null
         isPlaying = false
         isPaused = false
         pausedPosition = 0
+        clearLoadingState(cancelCurrentLoad = false, clearPending = true)
         logger.info("Music stopped")
     }
 
@@ -277,16 +361,16 @@ object ClientMusicPlayer {
     private fun applyPausedSync(trackId: String, positionMs: Long, specificSound: String) {
         val needsRestart = currentTrack != trackId || !isPlaying
         if (needsRestart) {
-            playMusic(trackId, positionMs, specificSound)
-        }
+            startAsyncLoad(trackId, positionMs, specificSound, startPaused = true)
+        } else {
+            pausedPosition = positionMs
+            trackStartTime = System.currentTimeMillis() - positionMs
+            isPlaying = true
+            isPaused = true
 
-        pausedPosition = positionMs
-        trackStartTime = System.currentTimeMillis() - positionMs
-        isPlaying = true
-        isPaused = true
-
-        if (customTrackSource != -1) {
-            AL10.alSourcePause(customTrackSource)
+            if (customTrackSource != -1) {
+                AL10.alSourcePause(customTrackSource)
+            }
         }
 
         logger.info("Music synced paused at ${pausedPosition}ms")
@@ -311,7 +395,7 @@ object ClientMusicPlayer {
             return
         }
 
-        playMusic(trackId, positionMs, specificSound)
+        startAsyncLoad(trackId, positionMs, specificSound, startPaused = false)
         logger.info("Music synced resumed from ${positionMs}ms")
     }
 
@@ -319,6 +403,7 @@ object ClientMusicPlayer {
         musyncActive = true
         currentStatus = packet
         statusReceivedAt = System.currentTimeMillis()
+        suppressVanillaMusic()
     }
 
     fun getCurrentStatus(): MusicStatusPacket? = currentStatus
@@ -326,12 +411,15 @@ object ClientMusicPlayer {
 
 
     fun getCurrentTrack(): String? = currentTrack
+    fun isLoading(): Boolean = isLoading
+    fun getLoadingTrack(): String? = loadingTrack
     fun isCurrentlyPlaying(): Boolean = isPlaying && !isPaused
 
     fun hasActiveTrack(): Boolean = currentTrack != null && isPlaying
 
     fun getCurrentPositionMs(): Long {
         return when {
+            isLoading -> loadingPositionMs
             isPaused -> pausedPosition
             isPlaying -> System.currentTimeMillis() - trackStartTime
             else -> 0
@@ -341,6 +429,10 @@ object ClientMusicPlayer {
     fun onClientTick() {
 
         val mc = Minecraft.getInstance()
+
+        if (musyncActive) {
+            suppressVanillaMusic(mc)
+        }
 
         val player = mc.player
         if (player != null && musyncActive && ++jukeboxCheckTicks >= JUKEBOX_CHECK_INTERVAL) {
@@ -393,19 +485,7 @@ object ClientMusicPlayer {
             gamePaused = false
         }
 
-        if (musyncActive) {
-            try {
-                val soundEngine = mc.soundManager.soundEngine
-                val strayMusic = soundEngine.instanceToChannel.keys.filter {
-                    it.source == SoundSource.MUSIC
-                }
-                for (stray in strayMusic) {
-                    mc.soundManager.stop(stray)
-                }
-            } catch (_: Exception) {}
-        }
-
-        if (!isPlaying || isPaused || currentTrack == null) return
+        if (isLoading || !isPlaying || isPaused || currentTrack == null) return
 
         if (gamePaused) return
 
@@ -430,6 +510,8 @@ object ClientMusicPlayer {
     }
 
     fun fullReset() {
+        clearLoadingState(cancelCurrentLoad = true, clearPending = true)
+        suppressVanillaMusic()
         stopMusicInternal()
         currentTrack = null
         isPlaying = false
@@ -445,6 +527,7 @@ object ClientMusicPlayer {
         jukeboxCheckTicks = 0
         lastMusicVol = -1f
         lastMasterVol = -1f
+        lastResolvedSound = null
         JukeboxTracker.clear()
     }
 }

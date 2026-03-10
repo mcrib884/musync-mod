@@ -170,11 +170,13 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             status?.currentPositionMs ?: 0
         }
         val playerDimId = Minecraft.getInstance().player?.entityLevel()?.dimension()?.location()?.toString() ?: "minecraft:overworld"
-        val usePrimaryDisplay = status?.mode == MusicStatusPacket.PlayMode.PLAYLIST || viewedDimId == "minecraft:overworld"
+        val localLoading = ClientMusicPlayer.isLoading() && viewedDimId == playerDimId
+        val localLoadingTrack = if (localLoading) ClientMusicPlayer.getLoadingTrack() else null
+        val usePrimaryDisplay = status?.priorityActive == true || viewedDimId == "minecraft:overworld"
         val displayDimSt = if (!usePrimaryDisplay) status?.activeDimensions?.find { it.id == viewedDimId } else null
-        val displayTrack = displayDimSt?.currentTrack ?: status?.currentTrack
+        val displayTrack = localLoadingTrack ?: displayDimSt?.currentTrack ?: status?.currentTrack
         val displayResolved = displayDimSt?.resolvedName ?: status?.resolvedName ?: ""
-        val displayIsPlaying = displayDimSt?.isPlaying ?: (status?.isPlaying == true)
+        val displayIsPlaying = if (localLoading) false else (displayDimSt?.isPlaying ?: (status?.isPlaying == true))
         val displayDuration: Long = displayDimSt?.durationMs ?: (status?.durationMs ?: 0)
         val rawDisplayPosition: Long = when {
             viewedDimId == playerDimId -> ownPosition
@@ -194,6 +196,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val displayDelayTicks = displayDimSt?.nextMusicDelayTicks ?: (status?.nextMusicDelayTicks ?: 0)
         displayedDuration = displayDuration
         displayedHasTrack = displayTrack != null
+        pauseBounds?.active = isOp && !localLoading && displayTrack != null
+        skipBounds?.active = isOp && !localLoading
+        stopBounds?.active = isOp && (localLoading || displayTrack != null || displayIsPlaying || displayWaiting)
 
         val trackText = if (displayTrack != null) {
             if (displayResolved.isNotEmpty()) {
@@ -212,6 +217,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
 
         val statusText = when {
+            localLoading -> "\u23F3 Loading"
             displayIsPlaying -> "\u25B6 Playing"
             displayTrack != null -> "\u23F8 Paused"
             displayWaiting -> {
@@ -221,6 +227,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             else -> "\u23F9 Stopped"
         }
         val statusColor = when {
+            localLoading -> 0xFF66CCFF.toInt()
             displayIsPlaying -> 0xFF55FF55.toInt()
             displayWaiting -> 0xFFFFAA00.toInt()
             else -> 0xFFAAAAAA.toInt()
@@ -255,7 +262,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.drawCenteredString(font, timeText, cx, barY + barH + 3, 0xFF999999.toInt())
 
         pauseIsPlaying = displayIsPlaying
-        val pauseLabel = if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
+        val pauseLabel = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
         pauseBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
             drawCustomBtn(graphics, b.x, b.y, b.w, b.h, pauseLabel, hov, b.active)
@@ -322,11 +329,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.drawString(font, "ticks", maxFieldX + 50 + 4, delayTextY, 0xFF666666.toInt())
 
         val activeDelayY = panelY + 190
+        val dimLabel = getDimDisplayName(viewedDimId)
         if (status != null && status.customMinDelay >= 0 && status.customMaxDelay >= 0) {
-            val dText = "Active: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
+            val dText = "$dimLabel: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
             graphics.drawCenteredString(font, dText, cx, activeDelayY, 0xFF55AA77.toInt())
         } else {
-            graphics.drawCenteredString(font, "Active: Vanilla defaults (10m 0s - 20m 0s)", cx, activeDelayY, 0xFF666666.toInt())
+            graphics.drawCenteredString(font, "$dimLabel: Vanilla/mod defaults", cx, activeDelayY, 0xFF666666.toInt())
         }
 
         if (!isOp) {
@@ -379,10 +387,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             status?.currentPositionMs ?: 0
         }
         val playerDimId = Minecraft.getInstance().player?.entityLevel()?.dimension()?.location()?.toString() ?: "minecraft:overworld"
+        val localLoading = ClientMusicPlayer.isLoading() && viewedDimId == playerDimId
+        val localLoadingTrack = if (localLoading) ClientMusicPlayer.getLoadingTrack() else null
         val displayDimSt = if (viewedDimId != playerDimId) status?.activeDimensions?.find { it.id == viewedDimId } else null
-        val displayTrack = displayDimSt?.currentTrack ?: status?.currentTrack
+        val displayTrack = localLoadingTrack ?: displayDimSt?.currentTrack ?: status?.currentTrack
         val displayResolved = displayDimSt?.resolvedName ?: status?.resolvedName ?: ""
-        val displayIsPlaying = displayDimSt?.isPlaying ?: (status?.isPlaying == true)
+        val displayIsPlaying = if (localLoading) false else (displayDimSt?.isPlaying ?: (status?.isPlaying == true))
         val displayDuration: Long = displayDimSt?.durationMs ?: (status?.durationMs ?: 0)
         val rawDisplayPosition: Long = displayDimSt?.currentPositionMs ?: ownPosition
         val displayPosition: Long = if (displayDimSt != null && displayDimSt.isPlaying)
@@ -393,6 +403,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val displayDelayTicks = displayDimSt?.nextMusicDelayTicks ?: (status?.nextMusicDelayTicks ?: 0)
         displayedDuration = displayDuration
         displayedHasTrack = displayTrack != null
+        pauseBounds?.active = isOp && !localLoading && displayTrack != null
+        skipBounds?.active = isOp && !localLoading
+        stopBounds?.active = isOp && (localLoading || displayTrack != null || displayIsPlaying || displayWaiting)
 
         val trackText = if (displayTrack != null) {
             if (displayResolved.isNotEmpty()) {
@@ -411,6 +424,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
 
         val statusText = when {
+            localLoading -> "\u23F3 Loading"
             displayIsPlaying -> "\u25B6 Playing"
             displayTrack != null -> "\u23F8 Paused"
             displayWaiting -> {
@@ -420,6 +434,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             else -> "\u23F9 Stopped"
         }
         val statusColor = when {
+            localLoading -> 0xFF66CCFF.toInt()
             displayIsPlaying -> 0xFF55FF55.toInt()
             displayWaiting -> 0xFFFFAA00.toInt()
             else -> 0xFFAAAAAA.toInt()
@@ -454,7 +469,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.drawCenteredString(poseStack, font, timeText, cx, barY + barH + 3, 0xFF999999.toInt())
 
         pauseIsPlaying = displayIsPlaying
-        val pauseLbl1919 = if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
+        val pauseLbl1919 = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
         pauseBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, pauseLbl1919, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
         stopBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
         skipBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
@@ -500,11 +515,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.drawString(poseStack, font, "ticks", maxFieldX + 50 + 4, delayTextY, 0xFF666666.toInt())
 
         val activeDelayY = panelY + 190
+        val dimLabel1919 = getDimDisplayName(viewedDimId)
         if (status != null && status.customMinDelay >= 0 && status.customMaxDelay >= 0) {
-            val dText = "Active: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
+            val dText = "$dimLabel1919: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
             GuiComponent.drawCenteredString(poseStack, font, dText, cx, activeDelayY, 0xFF55AA77.toInt())
         } else {
-            GuiComponent.drawCenteredString(poseStack, font, "Active: Vanilla defaults (10m 0s - 20m 0s)", cx, activeDelayY, 0xFF666666.toInt())
+            GuiComponent.drawCenteredString(poseStack, font, "$dimLabel1919: Vanilla/mod defaults", cx, activeDelayY, 0xFF666666.toInt())
         }
 
         if (!isOp) {

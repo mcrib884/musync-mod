@@ -33,6 +33,7 @@ object TrackNames {
         "music/game/nether/warmth" to "Warmth",
         "music/game/nether/ballad_of_the_cats" to "Ballad of the Cats",
         "music/game/end/end" to "The End",
+        "music/game/end/the_end" to "The End",
         "music/game/end/boss" to "Boss",
         "music/game/end/credits" to "Alpha",
         "music/game/stand_tall" to "Stand Tall",
