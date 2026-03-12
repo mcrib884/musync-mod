@@ -1,7 +1,6 @@
 package dev.mcrib884.musync.client
 
 import net.minecraft.client.Minecraft
-import net.minecraft.resources.ResourceLocation
 import org.lwjgl.openal.AL10
 import org.lwjgl.openal.AL11
 import org.lwjgl.stb.STBVorbis
@@ -25,11 +24,7 @@ object CustomTrackPlayer {
 
     fun loadResourceAudio(soundPath: String, namespace: String = "minecraft"): PreparedAudio? {
         return try {
-            //? if >=1.21 {
-            /*val fileLoc = ResourceLocation.fromNamespaceAndPath(namespace, "sounds/$soundPath.ogg")*/
-            //?} else {
-            val fileLoc = ResourceLocation(namespace, "sounds/$soundPath.ogg")
-            //?}
+            val fileLoc = dev.mcrib884.musync.resLoc(namespace, "sounds/$soundPath.ogg")
             val resource = Minecraft.getInstance().resourceManager.getResource(fileLoc).orElse(null)
             if (resource == null) {
                 logger.warn("Could not find resource: $fileLoc")

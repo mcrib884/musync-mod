@@ -687,11 +687,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     override fun isPauseScreen(): Boolean = false
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        //? if neoforge {
-        /*if (dev.mcrib884.musync.MuSyncNeoForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {*/
-        //?} else {
-        if (dev.mcrib884.musync.MuSyncForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
-        //?}
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
             onClose()
             return true
         }
@@ -1057,11 +1053,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (clamped > 0f) {
             previousMusicVolume = clamped
         }
-        //? if >=1.20 {
-        mc.options.getSoundSourceOptionInstance(SoundSource.MUSIC).set(clamped.toDouble())
-        //?} else {
-        /*mc.options.setSoundCategoryVolume(SoundSource.MUSIC, clamped)*/
-        //?}
+        dev.mcrib884.musync.setMusicVolume(mc, clamped)
         mc.options.save()
     }
 

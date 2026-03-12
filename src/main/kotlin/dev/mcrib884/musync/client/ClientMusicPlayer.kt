@@ -283,11 +283,7 @@ object ClientMusicPlayer {
             return null
         }
 
-        //? if >=1.20 {
-        val soundEvent = net.minecraft.sounds.SoundEvent.createVariableRangeEvent(soundLocation)
-        //?} else {
-        /*val soundEvent = net.minecraft.sounds.SoundEvent(soundLocation)*/
-        //?}
+        val soundEvent = dev.mcrib884.musync.createSoundEvent(soundLocation)
 
         val poolSize = weighedEvents?.list?.size ?: 1
         val attempts = if (poolSize > 1) minOf(poolSize * 2, 10) else 1

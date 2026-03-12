@@ -617,11 +617,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     override fun isPauseScreen(): Boolean = false
 
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        //? if neoforge {
-        /*if (dev.mcrib884.musync.MuSyncNeoForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {*/
-        //?} else {
-        if (dev.mcrib884.musync.MuSyncForge.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
-        //?}
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
             onClose()
             return true
         }
