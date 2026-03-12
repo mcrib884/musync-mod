@@ -24,6 +24,7 @@ data class CustomTrackDataPacket(
 //?}
     companion object {
         const val CHUNK_SIZE = 32 * 1024
+        private const val MAX_TOTAL_CHUNKS = 5000
 
         //? if neoforge {
         /*val TYPE = CustomPacketPayload.Type<CustomTrackDataPacket>(ResourceLocation.fromNamespaceAndPath("musync", "custom_track_data"))
@@ -41,10 +42,10 @@ data class CustomTrackDataPacket(
 
         fun decode(buf: FriendlyByteBuf): CustomTrackDataPacket {
             return CustomTrackDataPacket(
-                trackName = buf.readUtf(),
-                chunkIndex = buf.readInt(),
-                totalChunks = buf.readInt(),
-                data = buf.readByteArray()
+                trackName = buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH),
+                chunkIndex = buf.readInt().coerceAtLeast(0),
+                totalChunks = buf.readInt().coerceIn(0, MAX_TOTAL_CHUNKS),
+                data = buf.readByteArray(CHUNK_SIZE)
             )
         }
 

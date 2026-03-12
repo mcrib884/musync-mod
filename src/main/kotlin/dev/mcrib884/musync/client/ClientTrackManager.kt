@@ -42,7 +42,6 @@ object ClientTrackManager {
     var totalBytesReceived: Long = 0
         private set
 
-    // ---- Persistent disk cache settings ----
     var cacheEnabled: Boolean = true
         get() {
             ensureSettingsLoaded()
@@ -96,24 +95,20 @@ object ClientTrackManager {
         return File(gameDir, "customtracks")
     }
 
-    private fun scanLocalTracks(): Map<String, Int> {
-        val folder = getLocalFolder()
-        if (!folder.exists()) {
-            folder.mkdirs()
-            return emptyMap()
-        }
+    private fun scanFolderTracks(folder: File): Map<String, File> {
+        if (!folder.exists()) return emptyMap()
 
-        val result = mutableMapOf<String, Int>()
         val supportedExtensions = setOf("ogg", "wav")
-        val audioFiles = folder.listFiles { f ->
+        return folder.listFiles { f ->
             f.isFile && f.extension.lowercase() in supportedExtensions
-        } ?: return emptyMap()
+        }?.associateBy { it.nameWithoutExtension.lowercase().replace(" ", "_") } ?: emptyMap()
+    }
 
-        for (file in audioFiles) {
-            val name = file.nameWithoutExtension.lowercase().replace(" ", "_")
-            result[name] = file.length().toInt()
+    private fun scanLocalTracks(): Map<String, Int> {
+        val folder = getLocalFolder().apply {
+            if (!exists()) mkdirs()
         }
-        return result
+        return scanFolderTracks(folder).mapValues { it.value.length().toInt() }
     }
 
     fun handleManifest(manifest: List<Pair<String, Int>>) {
@@ -121,17 +116,15 @@ object ClientTrackManager {
         serverManifest = manifest
         val localTracks = scanLocalTracks()
         val cacheFolder = if (cacheEnabled) getCacheFolder() else null
+        val cachedTracks = if (cacheFolder != null && cacheFolder.exists()) scanFolderTracks(cacheFolder) else emptyMap()
 
         val missing = mutableListOf<Pair<String, Int>>()
         for ((name, serverSize) in manifest) {
             val localSize = localTracks[name]
             if (localSize != null && localSize == serverSize) continue
 
-            // Check the persistent musynccache folder for an exact name+size match
             if (cacheFolder != null && cacheFolder.exists()) {
-                val cached = cacheFolder.listFiles { f ->
-                    f.isFile && f.nameWithoutExtension.lowercase().replace(" ", "_") == name
-                }?.firstOrNull { it.length().toInt() == serverSize }
+                val cached = cachedTracks[name]?.takeIf { it.length().toInt() == serverSize }
                 if (cached != null) {
                     try {
                         val localFolder = getLocalFolder()
@@ -149,7 +142,12 @@ object ClientTrackManager {
         }
 
         if (missing.isEmpty()) {
-
+            tracksToDownload = emptyList()
+            currentDownloadIndex = 0
+            currentTrackChunksReceived = 0
+            currentTrackTotalChunks = 0
+            totalBytesToDownload = 0
+            totalBytesReceived = 0
             logger.info("All ${manifest.size} custom tracks are synced")
             cacheAllLocalTracks(manifest)
             isDownloading = false
@@ -174,37 +172,42 @@ object ClientTrackManager {
         )
     }
 
-    fun onChunkReceived(trackName: String, chunkIndex: Int, totalChunks: Int, chunkData: ByteArray) {
+    fun onChunkProgress(trackName: String, chunkIndex: Int, totalChunks: Int, acceptedBytes: Int) {
         if (!isDownloading) return
+        if (currentDownloadIndex !in tracksToDownload.indices) return
+        if (tracksToDownload[currentDownloadIndex].first != trackName) return
 
         currentTrackTotalChunks = totalChunks
         currentTrackChunksReceived = chunkIndex + 1
-        totalBytesReceived += chunkData.size
+        totalBytesReceived += acceptedBytes.toLong()
+    }
 
-        if (chunkIndex + 1 == totalChunks) {
+    fun onTrackDownloaded(trackName: String, totalChunks: Int, data: ByteArray) {
+        if (!isDownloading) return
 
-            val assembled = CustomTrackCache.get(trackName)
-            if (assembled != null) {
-                saveTrackToDisk(trackName, assembled)
-            }
+        saveTrackToDisk(trackName, data)
 
-            currentDownloadIndex++
-            currentTrackChunksReceived = 0
-            currentTrackTotalChunks = 0
+        if (currentDownloadIndex !in tracksToDownload.indices) return
+        if (tracksToDownload[currentDownloadIndex].first != trackName) return
 
-            if (currentDownloadIndex >= tracksToDownload.size) {
+        currentTrackChunksReceived = totalChunks
+        currentTrackTotalChunks = totalChunks
 
-                isDownloading = false
-                downloadComplete = true
-                logger.info("All custom tracks downloaded and synced!")
+        currentDownloadIndex++
+        currentTrackChunksReceived = 0
+        currentTrackTotalChunks = 0
 
-                cacheAllLocalTracks(serverManifest)
+        if (currentDownloadIndex >= tracksToDownload.size) {
+            isDownloading = false
+            downloadComplete = true
+            logger.info("All custom tracks downloaded and synced!")
 
-                Minecraft.getInstance().execute {
-                    val screen = Minecraft.getInstance().screen
-                    if (screen is TrackDownloadScreen) {
-                        screen.onDownloadComplete()
-                    }
+            cacheAllLocalTracks(serverManifest)
+
+            Minecraft.getInstance().execute {
+                val screen = Minecraft.getInstance().screen
+                if (screen is TrackDownloadScreen) {
+                    screen.onDownloadComplete()
                 }
             }
         }
@@ -238,7 +241,6 @@ object ClientTrackManager {
             file.writeBytes(data)
             logger.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
 
-            // Also persist to musynccache if caching is enabled
             if (cacheEnabled) {
                 try {
                     val cf = getCacheFolder()

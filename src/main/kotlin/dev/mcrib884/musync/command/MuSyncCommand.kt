@@ -324,7 +324,7 @@ object MuSyncCommand {
                                     if (trackValue != null) {
                                         if (trackValue.contains("|")) {
                                             val parts = trackValue.split("|", limit = 2)
-                                            dev.mcrib884.musync.server.MusicManager.addToQueue(parts[0])
+                                            dev.mcrib884.musync.server.MusicManager.addToQueue(trackValue)
                                             //? if >=1.20 {
                                             ctx.source.sendSuccess(
                                                 { Component.literal("Added to queue: ${formatOggName(parts[1])}") },
@@ -886,6 +886,16 @@ object MuSyncCommand {
         val value = TRACK_MAP[key] ?: return null
 
         return if (value.contains("|")) value.split("|", limit = 2)[0] else value
+    }
+
+    fun resolveTrackValue(friendlyName: String): String? {
+        val key = friendlyName.lowercase().replace(" ", "_")
+        if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(key)) {
+            return "custom:$key"
+        }
+        TRACK_MAP[key]?.let { return it }
+        val resourceLocation = ResourceLocation.tryParse(key) ?: return null
+        return if (soundEventContains(resourceLocation)) resourceLocation.toString() else null
     }
 
     fun getSpecificSound(friendlyName: String): String {

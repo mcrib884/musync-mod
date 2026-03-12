@@ -31,7 +31,7 @@ loom {
 	accessWidenerPath = rootProject.file("src/main/resources/$modId.accesswidener")
 
 	decompilers {
-		get("vineflower").apply { // Adds names to lambdas - useful for mixins
+		get("vineflower").apply {
 			options.put("mark-corresponding-synthetics", "1")
 		}
 	}
@@ -92,10 +92,6 @@ dependencies {
 		}
 	}
 }
-
-// NeoForge dev run: the Loom-remapped loader jar pulls in net.neoforged.fancymodloader:loader
-// via a transitive range dep, putting two jars providing the same fml_loader Java module on the
-// module path. Exclude the redundant Maven artifact so only the Loom-remapped version is used.
 if (loaderPlatform == "neoforge") {
 	configurations.all {
 		exclude(group = "net.neoforged.fancymodloader", module = "loader")

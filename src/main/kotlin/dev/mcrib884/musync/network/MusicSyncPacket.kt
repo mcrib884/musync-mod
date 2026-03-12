@@ -45,11 +45,11 @@ data class MusicSyncPacket(
 
         fun decode(buf: FriendlyByteBuf): MusicSyncPacket {
             return MusicSyncPacket(
-                trackId = buf.readUtf(),
+                trackId = buf.readUtf(PacketIO.MAX_TRACK_ID_LENGTH),
                 startPositionMs = buf.readLong(),
                 serverTimeMs = buf.readLong(),
                 action = buf.readEnum(Action::class.java),
-                specificSound = buf.readUtf()
+                specificSound = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH)
             )
         }
 

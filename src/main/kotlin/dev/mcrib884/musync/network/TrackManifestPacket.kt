@@ -36,11 +36,11 @@ data class TrackManifestPacket(
         }
 
         fun decode(buf: FriendlyByteBuf): TrackManifestPacket {
-            val count = buf.readInt()
+            val count = buf.readInt().coerceIn(0, PacketIO.MAX_MANIFEST_ENTRIES)
             val tracks = mutableListOf<Pair<String, Int>>()
             for (i in 0 until count) {
-                val name = buf.readUtf()
-                val size = buf.readInt()
+                val name = buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH)
+                val size = buf.readInt().coerceIn(0, PacketIO.MAX_TRACK_SIZE_BYTES)
                 tracks.add(name to size)
             }
             return TrackManifestPacket(tracks)

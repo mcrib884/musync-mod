@@ -67,7 +67,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         panelX = (width - panelW) / 2
         panelY = (height - panelH) / 2
 
-        searchField = EditBox(font, panelX + 8, panelY + 24, panelW - 16, 16, Component.literal("Search tracks"))
+        searchField = EditBox(font, panelX + 10, panelY + 25, panelW - 20, 14, Component.literal("Search tracks"))
         searchField!!.setMaxLength(64)
         searchField!!.setBordered(false)
         searchField!!.setTextColor(0xFFCCCCCC.toInt())
@@ -103,14 +103,15 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         graphics.drawCenteredString(font, "\u266B Track Browser \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
         graphics.drawString(font, "Search", panelX + 8, panelY + 12, 0xFF888888.toInt())
 
-        val sfY = panelY + 22
+        val sfY = panelY + 23
         val sfFocused = searchField?.isFocused == true
-        val sfBc = if (sfFocused) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
-        graphics.fill(panelX + 7, sfY, panelX + panelW - 7, sfY + 20, 0xFF1C1C2A.toInt())
-        graphics.fill(panelX + 7, sfY, panelX + panelW - 7, sfY + 1, sfBc)
-        graphics.fill(panelX + 7, sfY, panelX + 8, sfY + 20, sfBc)
-        graphics.fill(panelX + panelW - 8, sfY, panelX + panelW - 7, sfY + 20, sfBc)
-        graphics.fill(panelX + 7, sfY + 19, panelX + panelW - 7, sfY + 20, sfBc)
+        val sfBc = if (sfFocused) 0xFF33EE88.toInt() else 0xCC4E8C6A.toInt()
+        graphics.fill(panelX + 9, sfY, panelX + panelW - 9, sfY + 18, 0xFF171A25.toInt())
+        graphics.fill(panelX + 9, sfY, panelX + panelW - 9, sfY + 1, sfBc)
+        graphics.fill(panelX + 9, sfY, panelX + 10, sfY + 18, sfBc)
+        graphics.fill(panelX + panelW - 10, sfY, panelX + panelW - 9, sfY + 18, sfBc)
+        graphics.fill(panelX + 9, sfY + 17, panelX + panelW - 9, sfY + 18, sfBc)
+        graphics.fill(panelX + 10, sfY + 1, panelX + panelW - 10, sfY + 17, 0x331A2230)
 
         val countLabel = if (visibleTracks.size == tracks.size) {
             "${tracks.size} tracks available"
@@ -214,6 +215,15 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
         val visibleTracks = filteredTracks()
         GuiComponent.drawString(poseStack, font, "Search", panelX + 8, panelY + 14, 0xFF888888.toInt())
+        val sfY = panelY + 23
+        val sfFocused = searchField?.isFocused == true
+        val sfBc = if (sfFocused) 0xFF33EE88.toInt() else 0xCC4E8C6A.toInt()
+        GuiComponent.fill(poseStack, panelX + 9, sfY, panelX + panelW - 9, sfY + 18, 0xFF171A25.toInt())
+        GuiComponent.fill(poseStack, panelX + 9, sfY, panelX + panelW - 9, sfY + 1, sfBc)
+        GuiComponent.fill(poseStack, panelX + 9, sfY, panelX + 10, sfY + 18, sfBc)
+        GuiComponent.fill(poseStack, panelX + panelW - 10, sfY, panelX + panelW - 9, sfY + 18, sfBc)
+        GuiComponent.fill(poseStack, panelX + 9, sfY + 17, panelX + panelW - 9, sfY + 18, sfBc)
+        GuiComponent.fill(poseStack, panelX + 10, sfY + 1, panelX + panelW - 10, sfY + 17, 0x331A2230)
 
         val countLabel = if (visibleTracks.size == tracks.size) {
             "${tracks.size} tracks available"

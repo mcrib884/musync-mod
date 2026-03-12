@@ -22,7 +22,6 @@ import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent
 import net.minecraftforge.fml.loading.FMLEnvironment
 import net.minecraftforge.api.distmarker.Dist
-import net.minecraftforge.network.PacketDistributor
 import thedarkcolour.kotlinforforge.forge.MOD_BUS
 
 @Mod(MOD_ID)
@@ -101,25 +100,16 @@ class MuSyncForge {
                         if (isOp && !ClientTrackManager.isDownloading) {
                             val targetDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
                             if (MUSIC_SKIP_KEY.consumeClick()) {
-                                PacketHandler.INSTANCE.send(
-                                    PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim)
-                                )
+                                PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim))
                             }
                             if (MUSIC_PAUSE_KEY.consumeClick()) {
                                 val status = ClientMusicPlayer.getCurrentStatus()
                                 val action = if (status != null && status.isPlaying)
                                     MusicControlPacket.Action.PAUSE else MusicControlPacket.Action.RESUME
-                                PacketHandler.INSTANCE.send(
-                                    PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(action, null, null, targetDim = targetDim)
-                                )
+                                PacketHandler.sendToServer(MusicControlPacket(action, null, null, targetDim = targetDim))
                             }
                             if (MUSIC_STOP_KEY.consumeClick()) {
-                                PacketHandler.INSTANCE.send(
-                                    PacketDistributor.SERVER.noArg(),
-                                    MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim)
-                                )
+                                PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim))
                             }
                         } else {
 
@@ -129,14 +119,6 @@ class MuSyncForge {
                         }
                     }
                 }
-            }
-
-            //? if >=1.20 {
-            MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingIn> { _ ->
-            //?} else {
-            /*MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggedInEvent> { _ ->*/
-            //?}
-                ClientMusicPlayer.musyncActive = true
             }
 
             //? if >=1.20 {

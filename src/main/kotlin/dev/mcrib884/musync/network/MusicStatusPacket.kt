@@ -59,11 +59,11 @@ data class MusicStatusPacket(
         //?}
 
         fun encode(packet: MusicStatusPacket, buf: FriendlyByteBuf) {
-            buf.writeNullable(packet.currentTrack, FriendlyByteBuf::writeUtf)
+            PacketIO.writeNullableUtf(buf, packet.currentTrack)
             buf.writeLong(packet.currentPositionMs)
             buf.writeLong(packet.durationMs)
             buf.writeBoolean(packet.isPlaying)
-            buf.writeCollection(packet.queue, FriendlyByteBuf::writeUtf)
+            PacketIO.writeUtfList(buf, packet.queue)
             buf.writeEnum(packet.mode)
             buf.writeBoolean(packet.priorityActive)
             buf.writeUtf(packet.resolvedName)
@@ -76,8 +76,8 @@ data class MusicStatusPacket(
             buf.writeInt(packet.activeDimensions.size)
             for (dimension in packet.activeDimensions) {
                 buf.writeUtf(dimension.id)
-                buf.writeCollection(dimension.players, FriendlyByteBuf::writeUtf)
-                buf.writeNullable(dimension.currentTrack, FriendlyByteBuf::writeUtf)
+                PacketIO.writeUtfList(buf, dimension.players)
+                PacketIO.writeNullableUtf(buf, dimension.currentTrack)
                 buf.writeUtf(dimension.resolvedName)
                 buf.writeBoolean(dimension.isPlaying)
                 buf.writeLong(dimension.currentPositionMs)
@@ -90,14 +90,14 @@ data class MusicStatusPacket(
 
         fun decode(buf: FriendlyByteBuf): MusicStatusPacket {
             return MusicStatusPacket(
-                currentTrack = buf.readNullable(FriendlyByteBuf::readUtf),
+                currentTrack = PacketIO.readNullableUtf(buf, PacketIO.MAX_TRACK_ID_LENGTH),
                 currentPositionMs = buf.readLong(),
                 durationMs = buf.readLong(),
                 isPlaying = buf.readBoolean(),
-                queue = buf.readList(FriendlyByteBuf::readUtf),
+                queue = PacketIO.readUtfList(buf, PacketIO.MAX_QUEUE_ENTRIES, PacketIO.MAX_TRACK_ID_LENGTH),
                 mode = buf.readEnum(PlayMode::class.java),
                 priorityActive = buf.readBoolean(),
-                resolvedName = buf.readUtf(),
+                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH),
                 waitingForNextTrack = buf.readBoolean(),
                 ticksSinceLastMusic = buf.readInt(),
                 nextMusicDelayTicks = buf.readInt(),
@@ -105,13 +105,13 @@ data class MusicStatusPacket(
                 customMaxDelay = buf.readInt(),
                 syncOverworld = buf.readBoolean(),
                 activeDimensions = buildList {
-                    repeat(buf.readInt()) {
+                    repeat(buf.readInt().coerceIn(0, PacketIO.MAX_DIMENSION_ENTRIES)) {
                         add(
                             DimensionStatus(
-                                id = buf.readUtf(),
-                                players = buf.readList(FriendlyByteBuf::readUtf),
-                                currentTrack = buf.readNullable(FriendlyByteBuf::readUtf),
-                                resolvedName = buf.readUtf(),
+                                id = buf.readUtf(PacketIO.MAX_DIMENSION_ID_LENGTH),
+                                players = PacketIO.readUtfList(buf, PacketIO.MAX_PLAYERS_PER_DIMENSION, PacketIO.MAX_PLAYER_NAME_LENGTH),
+                                currentTrack = PacketIO.readNullableUtf(buf, PacketIO.MAX_TRACK_ID_LENGTH),
+                                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH),
                                 isPlaying = buf.readBoolean(),
                                 currentPositionMs = buf.readLong(),
                                 durationMs = buf.readLong(),

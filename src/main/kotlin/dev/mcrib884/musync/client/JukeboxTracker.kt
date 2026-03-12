@@ -5,20 +5,13 @@ import net.minecraft.resources.ResourceKey
 import net.minecraft.world.level.Level
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Tracks active jukeboxes (disc playing) across dimensions.
- * Fed by JukeboxBlockEntityMixin on both start and stop events.
- * Queried by ClientMusicPlayer on client tick for distance-based volume ducking.
- */
 object JukeboxTracker {
 
     private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
 
-    /** Maximum distance (blocks) at which a jukebox mutes MuSync music. Matches vanilla audible range. */
     const val JUKEBOX_RANGE = 64.0
     private const val JUKEBOX_RANGE_SQ = JUKEBOX_RANGE * JUKEBOX_RANGE
 
-    /** dimension -> set of active jukebox positions */
     private val activeJukeboxes = ConcurrentHashMap<ResourceKey<Level>, MutableSet<BlockPos>>()
 
     fun onJukeboxStartPlaying(dimension: ResourceKey<Level>, pos: BlockPos) {
@@ -36,10 +29,6 @@ object JukeboxTracker {
         if (set.isEmpty()) activeJukeboxes.remove(dimension)
     }
 
-    /**
-     * Returns true if the player at [playerPos] in [dimension] is within
-     * [JUKEBOX_RANGE] blocks of any currently-playing jukebox.
-     */
     fun isNearActiveJukebox(dimension: ResourceKey<Level>, playerPos: BlockPos): Boolean {
         val set = activeJukeboxes[dimension] ?: return false
         for (jukeboxPos in set) {
@@ -53,7 +42,6 @@ object JukeboxTracker {
         return false
     }
 
-    /** Clear all tracked jukeboxes (e.g., on disconnect). */
     fun clear() {
         activeJukeboxes.clear()
     }

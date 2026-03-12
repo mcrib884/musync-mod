@@ -7,11 +7,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundSource
 import net.minecraft.resources.ResourceLocation
-//? if >=1.20 {
-import net.minecraft.core.registries.BuiltInRegistries
-//?} else {
-/*import net.minecraft.core.Registry*/
-//?}
 import org.lwjgl.openal.AL10
 import java.util.concurrent.Executors
 
@@ -282,17 +277,18 @@ object ClientMusicPlayer {
             return null
         }
 
-        //? if >=1.20 {
-        val soundEvent = BuiltInRegistries.SOUND_EVENT.get(soundLocation)
-        //?} else {
-        /*val soundEvent = Registry.SOUND_EVENT.get(soundLocation)*/
-        //?}
-        if (soundEvent == null) {
+        val weighedEvents = mc.soundManager.getSoundEvent(soundLocation)
+        if (weighedEvents == null) {
             logger.warn("Unknown sound event: $trackId")
             return null
         }
 
-        val weighedEvents = mc.soundManager.getSoundEvent(soundLocation)
+        //? if >=1.20 {
+        val soundEvent = net.minecraft.sounds.SoundEvent.createVariableRangeEvent(soundLocation)
+        //?} else {
+        /*val soundEvent = net.minecraft.sounds.SoundEvent(soundLocation)*/
+        //?}
+
         val poolSize = weighedEvents?.list?.size ?: 1
         val attempts = if (poolSize > 1) minOf(poolSize * 2, 10) else 1
 

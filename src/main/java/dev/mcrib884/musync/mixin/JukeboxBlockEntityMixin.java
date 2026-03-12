@@ -9,14 +9,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Tracks when a jukebox starts/stops playing a disc.
- * Uses version-guarded injection points via Stonecutter comments.
- *
- * 1.20.1: JukeboxBlockEntity has startPlaying() and stopPlaying().
- * 1.19.2: JukeboxBlockEntity has setItem(int, ItemStack) for insertion
- *         and clearContent() for ejection.
- */
 @Mixin(JukeboxBlockEntity.class)
 public abstract class JukeboxBlockEntityMixin {
 
@@ -67,5 +59,4 @@ public abstract class JukeboxBlockEntityMixin {
     }
     */
     //? }
-    // >=1.21: JukeboxBlockEntity was refactored — no injection points available yet
 }

@@ -10,15 +10,25 @@ object CustomTrackCache {
     private const val MAX_CACHE_BYTES = 200L * 1024 * 1024
     private const val MAX_ENTRIES = 50
     private const val MAX_PENDING = 20
+    private const val MAX_TOTAL_CHUNKS = 5000
+    private const val PENDING_TIMEOUT_MS = 60_000L
 
     private val cache = ConcurrentHashMap<String, ByteArray>()
     private val insertionOrder = ConcurrentLinkedDeque<String>()
     private val totalCachedBytes = AtomicLong(0)
 
-    private val pending = ConcurrentHashMap<String, Pair<Int, MutableMap<Int, ByteArray>>>()
+    private data class PendingTrack(
+        val totalChunks: Int,
+        val chunks: MutableMap<Int, ByteArray>,
+        var lastUpdateMs: Long
+    )
+
+    private val pending = ConcurrentHashMap<String, PendingTrack>()
 
     fun handleChunk(trackName: String, chunkIndex: Int, totalChunks: Int, data: ByteArray) {
-        if (totalChunks <= 0 || totalChunks > 5000 || chunkIndex < 0 || chunkIndex >= totalChunks) {
+        purgeExpiredPending()
+
+        if (totalChunks <= 0 || totalChunks > MAX_TOTAL_CHUNKS || chunkIndex < 0 || chunkIndex >= totalChunks) {
             logger.warn("Invalid chunk metadata for $trackName: chunk=$chunkIndex total=$totalChunks")
             return
         }
@@ -28,32 +38,48 @@ object CustomTrackCache {
             return
         }
 
-        val entry = pending.getOrPut(trackName) { Pair(totalChunks, mutableMapOf()) }
+        val now = System.currentTimeMillis()
+        val entry = pending.getOrPut(trackName) { PendingTrack(totalChunks, mutableMapOf(), now) }
 
-        if (entry.first != totalChunks) {
-            logger.warn("Chunk count mismatch for $trackName: expected=${entry.first} got=$totalChunks")
+        if (entry.totalChunks != totalChunks) {
+            logger.warn("Chunk count mismatch for $trackName: expected=${entry.totalChunks} got=$totalChunks")
             pending.remove(trackName)
             return
         }
 
-        entry.second[chunkIndex] = data
+        val previous = entry.chunks.put(chunkIndex, data)
+        entry.lastUpdateMs = now
+        val acceptedBytes = if (previous == null) data.size else (data.size - previous.size).coerceAtLeast(0)
 
-        ClientTrackManager.onChunkReceived(trackName, chunkIndex, totalChunks, data)
+        ClientTrackManager.onChunkProgress(trackName, chunkIndex, totalChunks, acceptedBytes)
 
-        if (entry.second.size == totalChunks) {
-            val totalSize = entry.second.values.sumOf { it.size }
+        if (entry.chunks.size == totalChunks) {
+            val totalSize = entry.chunks.values.sumOf { it.size }
             val assembled = ByteArray(totalSize)
             var offset = 0
             for (i in 0 until totalChunks) {
-                val chunk = entry.second[i] ?: continue
+                val chunk = entry.chunks[i] ?: return
                 System.arraycopy(chunk, 0, assembled, offset, chunk.size)
                 offset += chunk.size
             }
             putWithEviction(trackName, assembled)
             pending.remove(trackName)
+            ClientTrackManager.onTrackDownloaded(trackName, totalChunks, assembled)
             logger.info("Cached custom track: $trackName (${assembled.size} bytes)")
         } else {
             logger.debug("Received chunk ${chunkIndex + 1}/$totalChunks for $trackName")
+        }
+    }
+
+    private fun purgeExpiredPending() {
+        val expireBefore = System.currentTimeMillis() - PENDING_TIMEOUT_MS
+        val iterator = pending.entries.iterator()
+        while (iterator.hasNext()) {
+            val entry = iterator.next()
+            if (entry.value.lastUpdateMs < expireBefore) {
+                logger.warn("Expiring incomplete track download: ${entry.key}")
+                iterator.remove()
+            }
         }
     }
 

@@ -45,9 +45,9 @@ data class MusicClientInfoPacket(
         fun decode(buf: FriendlyByteBuf): MusicClientInfoPacket {
             return MusicClientInfoPacket(
                 action = buf.readEnum(Action::class.java),
-                trackId = buf.readUtf(),
+                trackId = buf.readUtf(PacketIO.MAX_TRACK_ID_LENGTH),
                 durationMs = buf.readLong(),
-                resolvedName = buf.readUtf()
+                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH)
             )
         }
 

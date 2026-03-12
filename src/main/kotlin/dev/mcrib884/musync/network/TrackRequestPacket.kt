@@ -35,14 +35,11 @@ data class TrackRequestPacket(
         }
 
         private const val MAX_TRACK_COUNT = 100
-        private const val MAX_NAME_LENGTH = 256
-
         fun decode(buf: FriendlyByteBuf): TrackRequestPacket {
             val count = buf.readInt().coerceIn(0, MAX_TRACK_COUNT)
             val names = mutableListOf<String>()
             for (i in 0 until count) {
-                val name = buf.readUtf(MAX_NAME_LENGTH)
-                if (name.length <= MAX_NAME_LENGTH) names.add(name)
+                names.add(buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH))
             }
             return TrackRequestPacket(names)
         }

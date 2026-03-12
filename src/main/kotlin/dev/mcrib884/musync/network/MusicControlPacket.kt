@@ -24,7 +24,7 @@ data class MusicControlPacket(
 ) {
 //?}
     enum class Action {
-        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL
+        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL, HOTLOAD_TRACKS
     }
 
     companion object {
@@ -37,19 +37,19 @@ data class MusicControlPacket(
 
         fun encode(packet: MusicControlPacket, buf: FriendlyByteBuf) {
             buf.writeEnum(packet.action)
-            buf.writeNullable(packet.trackId, FriendlyByteBuf::writeUtf)
+            PacketIO.writeNullableUtf(buf, packet.trackId)
             buf.writeNullable(packet.queuePosition, FriendlyByteBuf::writeInt)
             buf.writeLong(packet.seekMs)
-            buf.writeNullable(packet.targetDim, FriendlyByteBuf::writeUtf)
+            PacketIO.writeNullableUtf(buf, packet.targetDim)
         }
 
         fun decode(buf: FriendlyByteBuf): MusicControlPacket {
             return MusicControlPacket(
                 action = buf.readEnum(Action::class.java),
-                trackId = buf.readNullable(FriendlyByteBuf::readUtf),
+                trackId = PacketIO.readNullableUtf(buf, PacketIO.MAX_TRACK_ID_LENGTH),
                 queuePosition = buf.readNullable(FriendlyByteBuf::readInt),
                 seekMs = buf.readLong(),
-                targetDim = buf.readNullable(FriendlyByteBuf::readUtf)
+                targetDim = PacketIO.readNullableUtf(buf, PacketIO.MAX_DIMENSION_ID_LENGTH)
             )
         }
 

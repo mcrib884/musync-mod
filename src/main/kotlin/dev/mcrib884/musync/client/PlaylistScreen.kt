@@ -293,7 +293,6 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
         graphics.drawString(font, "Name", panelX + 10, nameLabelY(), 0xFF888888.toInt())
 
-        // Dark background + border for playlist name field (custom theme)
         val nfY = nameFieldY()
         val nfFocused = playlistNameField?.isFocused == true
         val nfBc = if (nfFocused) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
@@ -515,7 +514,6 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
                 }
             }
 
-            // Per-row X delete buttons for saved playlists
             val savedRowRight = panelX + panelW - 14
             val savedXBtnX = savedRowRight - 14
             for (i in 0 until savedVisibleRows) {

@@ -127,10 +127,6 @@ class MuSyncNeoForge(modBus: IEventBus) {
                 }
             }
 
-            NeoForge.EVENT_BUS.addListener<net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn> { _ ->
-                ClientMusicPlayer.musyncActive = true
-            }
-
             NeoForge.EVENT_BUS.addListener<net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingOut> { _ ->
                 ClientMusicPlayer.fullReset()
                 dev.mcrib884.musync.client.ClientTrackManager.reset()
@@ -144,7 +140,6 @@ class MuSyncNeoForge(modBus: IEventBus) {
     }
 
     private fun onCommonSetup(event: FMLCommonSetupEvent) {
-        // Networking is registered via RegisterPayloadHandlersEvent
     }
 
     private fun onRegisterCommands(event: RegisterCommandsEvent) {

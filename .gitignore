@@ -3,6 +3,7 @@
 .kotlin/
 build/
 versions/*/build/
+run/
 
 .architectury-transformer
 .runs/
