@@ -148,6 +148,11 @@ object TrackNames {
             return "[Custom] " + id.removePrefix("custom:")
                 .replace("_", " ").replaceFirstChar { it.uppercase() }
         }
+        val path = if (id.contains(":")) id.substringAfter(":") else id
+        if (path.startsWith("music_disc.")) {
+            val discName = path.removePrefix("music_disc.").replace("_", " ").replaceFirstChar { it.uppercase() }
+            return "Music Disc: $discName"
+        }
         return POOL_NAMES[id] ?: id.removePrefix("minecraft:music.")
             .replace(".", " ").replace("_", " ").replaceFirstChar { it.uppercase() }
     }

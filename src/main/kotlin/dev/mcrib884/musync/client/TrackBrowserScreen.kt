@@ -248,34 +248,39 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
         for (i in 0 until visibleRows) {
             val idx = i + scrollOffset
-            if (idx >= visibleTracks.size) break
-
-            val y = listY + i * rowH
-            val (_, displayName) = visibleTracks[idx]
+            val slotY = listY + i * rowH
+            val rowTop = slotY + 1
+            val rowBottom = slotY + rowH - 1
+            val rowLeft = panelX + 6
+            val rowRight = panelX + panelW - 14
+            val hasTrack = idx < visibleTracks.size
             val isSelected = idx == selectedIndex
-            val isHovered = mouseX >= panelX + 6 && mouseX <= panelX + panelW - 10 &&
-                    mouseY >= y && mouseY < y + rowH
-
-            val bgColor = when {
-                isSelected -> 0xFF003322.toInt()
-                isHovered -> 0x30FFFFFF
-                i % 2 == 0 -> 0x15FFFFFF
-                else -> 0x00000000
+            val rowHovered = hasTrack && mouseX >= rowLeft && mouseX < rowRight && mouseY >= rowTop && mouseY < rowBottom
+            val rowFill = when {
+                isSelected -> 0x661F3A31.toInt()
+                rowHovered -> 0x6634364A.toInt()
+                hasTrack && i % 2 == 0 -> 0x442A2C3E.toInt()
+                hasTrack -> 0x33202233.toInt()
+                else -> 0x22151726.toInt()
             }
-            if (bgColor != 0) {
-                GuiComponent.fill(poseStack, panelX + 5, y, panelX + panelW - 5, y + rowH, bgColor)
-            }
+            val rowBorder = if (isSelected) 0xAA00CC66.toInt() else if (hasTrack) 0x884A4D68.toInt() else 0x442A2C40.toInt()
 
-            if (isSelected) {
-                GuiComponent.fill(poseStack, panelX + 5, y, panelX + 7, y + rowH, 0xFF00CC66.toInt())
-            }
+            GuiComponent.fill(poseStack, rowLeft, rowTop, rowRight, rowBottom, rowFill)
+            GuiComponent.fill(poseStack, rowLeft, rowTop, rowRight, rowTop + 1, rowBorder)
+            GuiComponent.fill(poseStack, rowLeft, rowBottom - 1, rowRight, rowBottom, rowBorder)
+            GuiComponent.fill(poseStack, rowLeft, rowTop, rowLeft + 1, rowBottom, rowBorder)
+            GuiComponent.fill(poseStack, rowRight - 1, rowTop, rowRight, rowBottom, rowBorder)
 
+            if (!hasTrack) continue
+
+            val (_, displayName) = visibleTracks[idx]
             val textColor = if (isSelected) 0xFF00FF88.toInt() else 0xFFDDDDDD.toInt()
-            val maxNameW = panelW - 24
+            val maxNameW = panelW - 34
             val trimmed = if (font.width(displayName) > maxNameW) {
                 font.plainSubstrByWidth(displayName, maxNameW) + "..."
             } else displayName
-            GuiComponent.drawString(poseStack, font, trimmed, panelX + 12, y + 4, textColor)
+            val textY = rowTop + ((rowBottom - rowTop) - font.lineHeight) / 2 + 1
+            GuiComponent.drawString(poseStack, font, trimmed, rowLeft + 6, textY, textColor)
         }
 
         if (visibleTracks.size > visibleRows) {
@@ -285,9 +290,10 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             val thumbH = ((visibleRows.toFloat() / visibleTracks.size) * barTotalH).toInt().coerceAtLeast(10)
             val thumbY = listY + ((scrollOffset.toFloat() / maxScroll) * (barTotalH - thumbH)).toInt()
 
-            GuiComponent.fill(poseStack, barX, listY, barX + barW, listY + barTotalH, 0xFF222244.toInt())
-
-            val thumbColor = if (draggingScrollbar) 0xFF44FFAA.toInt() else 0xFF00CC66.toInt()
+            GuiComponent.fill(poseStack, barX, listY, barX + barW, listY + barTotalH, 0xFF151726.toInt())
+            GuiComponent.fill(poseStack, barX, listY, barX + barW, listY + 1, 0xFF2A2C40.toInt())
+            GuiComponent.fill(poseStack, barX, listY + barTotalH - 1, barX + barW, listY + barTotalH, 0xFF2A2C40.toInt())
+            val thumbColor = if (draggingScrollbar) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
             GuiComponent.fill(poseStack, barX, thumbY, barX + barW, thumbY + thumbH, thumbColor)
         }
 

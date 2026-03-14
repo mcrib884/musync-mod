@@ -8,18 +8,24 @@ import java.io.File
 object ClientTrackManager {
 
     private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val SAFE_NAME = Regex("^[a-z0-9_\\-]+$")
+    private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
+    private const val MAX_TRACKS_PER_REQUEST = 3
 
-    private fun sanitizeName(name: String): String? {
-        val cleaned = name.lowercase().replace(" ", "_")
-        if (!SAFE_NAME.matches(cleaned)) {
+    private fun normalizeInternalName(name: String): String? {
+        val normalized = name.lowercase().replace(" ", "_")
+        if (!SAFE_INTERNAL_NAME.matches(normalized)) {
             logger.warn("Rejected unsafe track name: $name")
             return null
         }
-        return cleaned
+        return normalized
+    }
+
+    fun displayTrackName(internalName: String): String {
+        return internalName.substringBeforeLast(".")
     }
 
     private var serverManifest: List<Pair<String, Int>> = emptyList()
+    private var serverManifestVersion: Long = -1L
 
     var tracksToDownload: List<Pair<String, Int>> = emptyList()
         private set
@@ -41,6 +47,13 @@ object ClientTrackManager {
         private set
     var totalBytesReceived: Long = 0
         private set
+
+    private val failedTracks = linkedSetOf<String>()
+    private val pendingRequested = linkedSetOf<String>()
+    private var lastProgressAtMs: Long = 0L
+    private var stallRetries: Int = 0
+    private const val DOWNLOAD_STALL_TIMEOUT_MS = 20_000L
+    private const val MAX_STALL_RETRIES = 2
 
     var cacheEnabled: Boolean = true
         get() {
@@ -101,7 +114,10 @@ object ClientTrackManager {
         val supportedExtensions = setOf("ogg", "wav")
         return folder.listFiles { f ->
             f.isFile && f.extension.lowercase() in supportedExtensions
-        }?.associateBy { it.nameWithoutExtension.lowercase().replace(" ", "_") } ?: emptyMap()
+        }?.mapNotNull { file ->
+            val key = normalizeInternalName(file.name) ?: return@mapNotNull null
+            key to file
+        }?.toMap() ?: emptyMap()
     }
 
     private fun scanLocalTracks(): Map<String, Int> {
@@ -111,34 +127,42 @@ object ClientTrackManager {
         return scanFolderTracks(folder).mapValues { it.value.length().toInt() }
     }
 
-    fun handleManifest(manifest: List<Pair<String, Int>>) {
+    fun handleManifest(manifestVersion: Long, manifest: List<Pair<String, Int>>) {
         ensureSettingsLoaded()
         serverManifest = manifest
+        serverManifestVersion = manifestVersion
+        failedTracks.clear()
+        pendingRequested.clear()
         val localTracks = scanLocalTracks()
         val cacheFolder = if (cacheEnabled) getCacheFolder() else null
         val cachedTracks = if (cacheFolder != null && cacheFolder.exists()) scanFolderTracks(cacheFolder) else emptyMap()
 
         val missing = mutableListOf<Pair<String, Int>>()
         for ((name, serverSize) in manifest) {
-            val localSize = localTracks[name]
+            val internalName = normalizeInternalName(name)
+            if (internalName == null) {
+                failedTracks.add(name)
+                continue
+            }
+            val localSize = localTracks[internalName]
             if (localSize != null && localSize == serverSize) continue
 
             if (cacheFolder != null && cacheFolder.exists()) {
-                val cached = cachedTracks[name]?.takeIf { it.length().toInt() == serverSize }
+                val cached = cachedTracks[internalName]?.takeIf { it.length().toInt() == serverSize }
                 if (cached != null) {
                     try {
                         val localFolder = getLocalFolder()
                         if (!localFolder.exists()) localFolder.mkdirs()
                         cached.copyTo(File(localFolder, cached.name), overwrite = true)
-                        logger.info("Restored cached track '$name' from musynccache (${cached.length()} bytes)")
+                        logger.info("Restored cached track '$internalName' from musynccache (${cached.length()} bytes)")
                         continue
                     } catch (e: Exception) {
-                        logger.error("Failed to restore cached track '$name': ${e.message}")
+                        logger.error("Failed to restore cached track '$internalName': ${e.message}")
                     }
                 }
             }
 
-            missing.add(name to serverSize)
+            missing.add(internalName to serverSize)
         }
 
         if (missing.isEmpty()) {
@@ -148,10 +172,13 @@ object ClientTrackManager {
             currentTrackTotalChunks = 0
             totalBytesToDownload = 0
             totalBytesReceived = 0
+            stallRetries = 0
+            pendingRequested.clear()
+            lastProgressAtMs = 0L
             logger.info("All ${manifest.size} custom tracks are synced")
             cacheAllLocalTracks(manifest)
             isDownloading = false
-            downloadComplete = true
+            downloadComplete = failedTracks.isEmpty()
             return
         }
 
@@ -163,13 +190,31 @@ object ClientTrackManager {
         totalBytesReceived = 0
         isDownloading = true
         downloadComplete = false
+        stallRetries = 0
+        pendingRequested.clear()
+        lastProgressAtMs = System.currentTimeMillis()
 
         logger.info("Need to download ${missing.size} custom tracks (${formatSize(totalBytesToDownload)})")
+        requestNextBatch()
+    }
 
-        val requestNames = missing.map { it.first }
-        PacketHandler.sendToServer(
-            TrackRequestPacket(requestNames)
-        )
+    private fun requestNextBatch() {
+        if (!isDownloading) return
+        if (pendingRequested.isNotEmpty()) return
+        if (currentDownloadIndex !in tracksToDownload.indices) return
+
+        val requestNames = mutableListOf<String>()
+        var index = currentDownloadIndex
+        while (index < tracksToDownload.size && requestNames.size < MAX_TRACKS_PER_REQUEST) {
+            val name = tracksToDownload[index].first
+            if (name !in failedTracks) requestNames.add(name)
+            index++
+        }
+        if (requestNames.isEmpty()) return
+
+        pendingRequested.addAll(requestNames)
+        lastProgressAtMs = System.currentTimeMillis()
+        PacketHandler.sendToServer(TrackRequestPacket(serverManifestVersion, requestNames))
     }
 
     fun onChunkProgress(trackName: String, chunkIndex: Int, totalChunks: Int, acceptedBytes: Int) {
@@ -177,6 +222,7 @@ object ClientTrackManager {
         if (currentDownloadIndex !in tracksToDownload.indices) return
         if (tracksToDownload[currentDownloadIndex].first != trackName) return
 
+        lastProgressAtMs = System.currentTimeMillis()
         currentTrackTotalChunks = totalChunks
         currentTrackChunksReceived = chunkIndex + 1
         totalBytesReceived += acceptedBytes.toLong()
@@ -185,7 +231,12 @@ object ClientTrackManager {
     fun onTrackDownloaded(trackName: String, totalChunks: Int, data: ByteArray) {
         if (!isDownloading) return
 
-        saveTrackToDisk(trackName, data)
+        val saved = saveTrackToDisk(trackName, data)
+        if (!saved) {
+            failedTracks.add(trackName)
+            logger.warn("Track marked failed and skipped: $trackName")
+        }
+        pendingRequested.remove(trackName)
 
         if (currentDownloadIndex !in tracksToDownload.indices) return
         if (tracksToDownload[currentDownloadIndex].first != trackName) return
@@ -193,50 +244,136 @@ object ClientTrackManager {
         currentTrackChunksReceived = totalChunks
         currentTrackTotalChunks = totalChunks
 
+        advanceDownloadCursor()
+    }
+
+    fun onTrackFailed(trackName: String, reason: String) {
+        if (!isDownloading) return
+        if (currentDownloadIndex !in tracksToDownload.indices) return
+        if (tracksToDownload[currentDownloadIndex].first != trackName) return
+        pendingRequested.remove(trackName)
+        failedTracks.add(trackName)
+        logger.warn("Track download failed for '$trackName': $reason")
+        advanceDownloadCursor()
+    }
+
+    private fun advanceDownloadCursor() {
         currentDownloadIndex++
         currentTrackChunksReceived = 0
         currentTrackTotalChunks = 0
+        lastProgressAtMs = System.currentTimeMillis()
 
-        if (currentDownloadIndex >= tracksToDownload.size) {
-            isDownloading = false
-            downloadComplete = true
+        if (currentDownloadIndex < tracksToDownload.size) {
+            if (pendingRequested.isEmpty()) {
+                requestNextBatch()
+            }
+            return
+        }
+
+        isDownloading = false
+        downloadComplete = failedTracks.isEmpty()
+        stallRetries = 0
+
+        if (downloadComplete) {
             logger.info("All custom tracks downloaded and synced!")
-
-            cacheAllLocalTracks(serverManifest)
-
+        } else {
+            logger.warn("Custom track sync finished with ${failedTracks.size} failed track(s): ${failedTracks.joinToString(",")}")
             Minecraft.getInstance().execute {
-                val screen = Minecraft.getInstance().screen
+                val mc = Minecraft.getInstance()
+                val screen = mc.screen
                 if (screen is TrackDownloadScreen) {
                     screen.onDownloadComplete()
+                } else {
+                    val next = TrackDownloadScreen()
+                    mc.setScreen(next)
+                    next.onDownloadComplete()
                 }
+            }
+        }
+
+        java.util.concurrent.CompletableFuture.runAsync {
+            cacheAllLocalTracks(serverManifest)
+        }
+
+        Minecraft.getInstance().execute {
+            val screen = Minecraft.getInstance().screen
+            if (screen is TrackDownloadScreen) {
+                screen.onDownloadComplete()
             }
         }
     }
 
-    private fun saveTrackToDisk(trackName: String, data: ByteArray) {
-        val safeName = sanitizeName(trackName)
+    fun onClientTick() {
+        if (!isDownloading) return
+        if (currentDownloadIndex !in tracksToDownload.indices) return
+
+        val now = System.currentTimeMillis()
+        if (now - lastProgressAtMs < DOWNLOAD_STALL_TIMEOUT_MS) return
+
+        val remaining = if (pendingRequested.isNotEmpty()) pendingRequested.toList() else tracksToDownload.drop(currentDownloadIndex).map { it.first }.take(MAX_TRACKS_PER_REQUEST)
+        if (remaining.isEmpty()) {
+            isDownloading = false
+            downloadComplete = failedTracks.isEmpty()
+            return
+        }
+
+        if (stallRetries < MAX_STALL_RETRIES) {
+            stallRetries++
+            lastProgressAtMs = now
+            currentTrackChunksReceived = 0
+            currentTrackTotalChunks = 0
+            logger.warn("Track download stalled, retrying remaining ${remaining.size} track(s) (attempt $stallRetries/$MAX_STALL_RETRIES)")
+            PacketHandler.sendToServer(TrackRequestPacket(serverManifestVersion, remaining))
+            return
+        }
+
+        logger.error("Track download aborted after stall retries; remaining tracks: ${remaining.joinToString(",")}")
+        remaining.forEach { failedTracks.add(it) }
+        pendingRequested.clear()
+        isDownloading = false
+        downloadComplete = false
+
+        Minecraft.getInstance().execute {
+            val mc = Minecraft.getInstance()
+            val screen = mc.screen
+            if (screen is TrackDownloadScreen) {
+                screen.onDownloadComplete()
+            } else {
+                val next = TrackDownloadScreen()
+                mc.setScreen(next)
+                next.onDownloadComplete()
+            }
+        }
+    }
+
+    private fun saveTrackToDisk(trackName: String, data: ByteArray): Boolean {
+        val safeName = normalizeInternalName(trackName)
         if (safeName == null) {
             logger.warn("Refusing to save track with unsafe name: $trackName")
-            return
+            return false
         }
         try {
             val folder = getLocalFolder()
             if (!folder.exists()) folder.mkdirs()
 
+            val expectedExtension = safeName.substringAfterLast('.', "")
             val extension = if (data.size >= 4) {
                 val magic = String(data, 0, 4, Charsets.US_ASCII)
                 when {
                     magic == "RIFF" -> "wav"
                     magic == "OggS" -> "ogg"
-                    else -> "ogg"
+                    else -> ""
                 }
-            } else "ogg"
+            } else ""
+            if (extension.isEmpty() || extension != expectedExtension) {
+                logger.warn("Refusing to save track due to extension/content mismatch: $trackName")
+                return false
+            }
 
-            val file = File(folder, "$safeName.$extension")
-            val canonical = file.canonicalPath
-            if (!canonical.startsWith(folder.canonicalPath)) {
+            val file = File(folder, safeName)
+            if (!isInsideFolder(file, folder)) {
                 logger.error("Path traversal detected for track: $trackName")
-                return
+                return false
             }
             file.writeBytes(data)
             logger.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
@@ -245,9 +382,8 @@ object ClientTrackManager {
                 try {
                     val cf = getCacheFolder()
                     if (!cf.exists()) cf.mkdirs()
-                    val cacheFile = File(cf, "$safeName.$extension")
-                    val cacheCanonical = cacheFile.canonicalPath
-                    if (cacheCanonical.startsWith(cf.canonicalPath)) {
+                    val cacheFile = File(cf, safeName)
+                    if (isInsideFolder(cacheFile, cf)) {
                         cacheFile.writeBytes(data)
                         logger.info("Saved custom track to cache: ${cacheFile.name} (${data.size} bytes)")
                     }
@@ -255,8 +391,18 @@ object ClientTrackManager {
                     logger.error("Failed to cache track $trackName: ${e2.message}")
                 }
             }
+            return true
         } catch (e: Exception) {
             logger.error("Failed to save track $trackName: ${e.message}")
+            return false
+        }
+    }
+
+    private fun isInsideFolder(file: File, folder: File): Boolean {
+        return try {
+            file.canonicalFile.toPath().startsWith(folder.canonicalFile.toPath())
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -269,18 +415,18 @@ object ClientTrackManager {
             f.isFile && f.extension.lowercase() in supportedExtensions
         } ?: return
 
-        val serverTrackNames = manifest.map { it.first }.toSet()
+        val serverTrackNames = manifest.mapNotNull { normalizeInternalName(it.first) }.toSet()
 
         for (file in audioFiles) {
-            val name = file.nameWithoutExtension.lowercase().replace(" ", "_")
+            val internalName = normalizeInternalName(file.name) ?: continue
 
-            if (name in serverTrackNames && !CustomTrackCache.has(name)) {
+            if (internalName in serverTrackNames && !CustomTrackCache.has(internalName)) {
                 try {
                     val bytes = file.readBytes()
-                    CustomTrackCache.put(name, bytes)
-                    logger.info("Cached local track: $name (${bytes.size} bytes)")
+                    CustomTrackCache.put(internalName, bytes)
+                    logger.info("Cached local track: $internalName (${bytes.size} bytes)")
                 } catch (e: Exception) {
-                    logger.error("Failed to cache local track $name: ${e.message}")
+                    logger.error("Failed to cache local track $internalName: ${e.message}")
                 }
             }
         }
@@ -288,7 +434,7 @@ object ClientTrackManager {
 
     fun currentTrackName(): String {
         return if (currentDownloadIndex in tracksToDownload.indices) {
-            tracksToDownload[currentDownloadIndex].first
+            displayTrackName(tracksToDownload[currentDownloadIndex].first)
         } else ""
     }
 
@@ -300,19 +446,29 @@ object ClientTrackManager {
 
     fun reset() {
         serverManifest = emptyList()
+        serverManifestVersion = -1L
         tracksToDownload = emptyList()
         currentDownloadIndex = 0
         currentTrackChunksReceived = 0
         currentTrackTotalChunks = 0
         totalBytesToDownload = 0
         totalBytesReceived = 0
+        failedTracks.clear()
+        pendingRequested.clear()
+        lastProgressAtMs = 0L
+        stallRetries = 0
         isDownloading = false
         downloadComplete = false
     }
 
     fun getServerCustomTrackNames(): List<String> {
-        return serverManifest.map { it.first }
+        return serverManifest
+            .map { displayTrackName(it.first) }
+            .distinct()
+            .sorted()
     }
+
+    fun getFailedTracks(): List<String> = failedTracks.toList()
 
     fun formatSize(bytes: Long): String {
         return when {

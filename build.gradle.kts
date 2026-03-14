@@ -20,7 +20,11 @@ version = modVersion
 base { archivesName = "${modId}-${loaderPlatform}" }
 
 architectury {
-	if (loaderPlatform == "neoforge") neoForge() else forge()
+	when (loaderPlatform) {
+		"neoforge" -> neoForge()
+		"fabric" -> fabric()
+		else -> forge()
+	}
 	platformSetupLoomIde()
 	minecraft = mcVersion
 }
@@ -60,6 +64,7 @@ repositories {
 	maven("https://maven.neoforged.net/releases")
 	maven("https://maven.parchmentmc.org/")
 	maven("https://thedarkcolour.github.io/KotlinForForge/")
+	maven("https://maven.fabricmc.net/")
 }
 
 extensions.configure<KotlinJvmProjectExtension>("kotlin") {
@@ -80,15 +85,26 @@ dependencies {
 		parchment("org.parchmentmc.data:parchment-$parchmentMinecraftVersion:$parchmentMappingsVersion@zip")
 	})
 
-	if (loaderPlatform == "neoforge") {
-		"neoForge"("net.neoforged:neoforge:${loaderVersion}")
-		implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
-	} else {
-		"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
-		if (mcVersion.startsWith("1.20")) {
-			implementation("thedarkcolour:kotlinforforge:4.12.0")
-		} else {
-			implementation("thedarkcolour:kotlinforforge:3.12.0")
+	when (loaderPlatform) {
+		"neoforge" -> {
+			"neoForge"("net.neoforged:neoforge:${loaderVersion}")
+			implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
+		}
+		"fabric" -> {
+			val fabricApiVersion: String by project
+			val fabricKotlinVersion: String by project
+			"modImplementation"("net.fabricmc:fabric-loader:${loaderVersion}")
+			"modImplementation"("net.fabricmc.fabric-api:fabric-api:${fabricApiVersion}")
+			"modImplementation"("net.fabricmc:fabric-language-kotlin:${fabricKotlinVersion}")
+			"compileOnly"("com.google.code.findbugs:jsr305:3.0.2")
+		}
+		else -> {
+			"forge"("net.minecraftforge:forge:${mcVersion}-${loaderVersion}")
+			if (mcVersion.startsWith("1.20")) {
+				implementation("thedarkcolour:kotlinforforge:4.12.0")
+			} else {
+				implementation("thedarkcolour:kotlinforforge:3.12.0")
+			}
 		}
 	}
 }
@@ -127,13 +143,22 @@ tasks {
 		)
 
 		inputs.properties(props)
-		filesMatching(listOf("META-INF/mods.toml", "META-INF/neoforge.mods.toml", "**.mixins.json", "pack.mcmeta")) {
+		filesMatching(listOf("META-INF/mods.toml", "META-INF/neoforge.mods.toml", "fabric.mod.json", "**.mixins.json", "pack.mcmeta")) {
 			expand(props)
 		}
-		if (loaderPlatform == "neoforge") {
-			exclude("META-INF/mods.toml")
-		} else {
-			exclude("META-INF/neoforge.mods.toml")
+		when (loaderPlatform) {
+			"neoforge" -> {
+				exclude("META-INF/mods.toml")
+				exclude("fabric.mod.json")
+			}
+			"fabric" -> {
+				exclude("META-INF/mods.toml")
+				exclude("META-INF/neoforge.mods.toml")
+			}
+			else -> {
+				exclude("META-INF/neoforge.mods.toml")
+				exclude("fabric.mod.json")
+			}
 		}
 	}
 

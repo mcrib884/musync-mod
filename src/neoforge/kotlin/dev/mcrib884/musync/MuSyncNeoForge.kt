@@ -21,7 +21,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import net.neoforged.neoforge.event.server.ServerStoppingEvent
 import net.neoforged.fml.common.Mod
-import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent
 import net.neoforged.fml.loading.FMLEnvironment
 import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
@@ -30,7 +29,6 @@ import net.neoforged.bus.api.IEventBus
 class MuSyncNeoForge(modBus: IEventBus) {
 
     init {
-        modBus.addListener(::onCommonSetup)
         modBus.addListener(PacketHandler::registerNeoForge)
 
         NeoForge.EVENT_BUS.addListener<ServerStartedEvent> { _ -> MusicManager.onServerStarted() }
@@ -41,6 +39,9 @@ class MuSyncNeoForge(modBus: IEventBus) {
         }
         NeoForge.EVENT_BUS.addListener<PlayerEvent.PlayerLoggedOutEvent> { event ->
             (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerLeave(it) }
+        }
+        NeoForge.EVENT_BUS.addListener<PlayerEvent.PlayerRespawnEvent> { event ->
+            (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerRespawn(it) }
         }
         NeoForge.EVENT_BUS.addListener<PlayerEvent.PlayerChangedDimensionEvent> { event ->
             (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerChangedDimension(event.from, event.to, it) }
@@ -100,8 +101,6 @@ class MuSyncNeoForge(modBus: IEventBus) {
         initializeMod()
     }
 
-    private fun onCommonSetup(event: FMLCommonSetupEvent) {
-    }
 
     private fun onRegisterCommands(event: RegisterCommandsEvent) {
         MuSyncCommand.register(event.dispatcher)

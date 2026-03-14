@@ -6,12 +6,13 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
 
 data class TrackRequestPacket(
+    val manifestVersion: Long,
     val trackNames: List<String>
 //? if neoforge {
 /*) : CustomPacketPayload {
@@ -28,37 +29,39 @@ data class TrackRequestPacket(
         //?}
 
         fun encode(packet: TrackRequestPacket, buf: FriendlyByteBuf) {
+            buf.writeLong(packet.manifestVersion)
             buf.writeInt(packet.trackNames.size)
             for (name in packet.trackNames) {
-                buf.writeUtf(name)
+                PacketIO.writeUtfBounded(buf, name, PacketIO.MAX_TRACK_NAME_LENGTH)
             }
         }
 
-        private const val MAX_TRACK_COUNT = 100
+        private const val MAX_TRACK_COUNT = 3
         fun decode(buf: FriendlyByteBuf): TrackRequestPacket {
+            val manifestVersion = buf.readLong()
             val count = buf.readInt().coerceIn(0, MAX_TRACK_COUNT)
             val names = mutableListOf<String>()
             for (i in 0 until count) {
                 names.add(buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH))
             }
-            return TrackRequestPacket(names)
+            return TrackRequestPacket(manifestVersion, names)
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: TrackRequestPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
-                dev.mcrib884.musync.server.MusicManager.handleTrackRequest(packet.trackNames, sender)
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: TrackRequestPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
                 val sender = ctx.get().sender ?: return@enqueueWork
-                dev.mcrib884.musync.server.MusicManager.handleTrackRequest(packet.trackNames, sender)
+                dev.mcrib884.musync.server.MusicManager.handleTrackRequest(packet.manifestVersion, packet.trackNames, sender)
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: TrackRequestPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer ?: return@enqueueWork
+                dev.mcrib884.musync.server.MusicManager.handleTrackRequest(packet.manifestVersion, packet.trackNames, sender)
+            }
+        }*/
         //?}
     }
 }

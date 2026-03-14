@@ -6,12 +6,13 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
 
 data class TrackManifestPacket(
+    val manifestVersion: Long,
     val tracks: List<Pair<String, Int>>
 //? if neoforge {
 /*) : CustomPacketPayload {
@@ -28,14 +29,16 @@ data class TrackManifestPacket(
         //?}
 
         fun encode(packet: TrackManifestPacket, buf: FriendlyByteBuf) {
+            buf.writeLong(packet.manifestVersion)
             buf.writeInt(packet.tracks.size)
             for ((name, size) in packet.tracks) {
-                buf.writeUtf(name)
+                PacketIO.writeUtfBounded(buf, name, PacketIO.MAX_TRACK_NAME_LENGTH)
                 buf.writeInt(size)
             }
         }
 
         fun decode(buf: FriendlyByteBuf): TrackManifestPacket {
+            val manifestVersion = buf.readLong()
             val count = buf.readInt().coerceIn(0, PacketIO.MAX_MANIFEST_ENTRIES)
             val tracks = mutableListOf<Pair<String, Int>>()
             for (i in 0 until count) {
@@ -43,22 +46,22 @@ data class TrackManifestPacket(
                 val size = buf.readInt().coerceIn(0, PacketIO.MAX_TRACK_SIZE_BYTES)
                 tracks.add(name to size)
             }
-            return TrackManifestPacket(tracks)
+            return TrackManifestPacket(manifestVersion, tracks)
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: TrackManifestPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                dev.mcrib884.musync.client.ClientTrackManager.handleManifest(packet.tracks)
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: TrackManifestPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
-                dev.mcrib884.musync.client.ClientTrackManager.handleManifest(packet.tracks)
+                dev.mcrib884.musync.client.ClientTrackManager.handleManifest(packet.manifestVersion, packet.tracks)
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: TrackManifestPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.ClientTrackManager.handleManifest(packet.manifestVersion, packet.tracks)
+            }
+        }*/
         //?}
     }
 }

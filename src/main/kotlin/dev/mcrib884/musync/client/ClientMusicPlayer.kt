@@ -8,6 +8,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundSource
 import net.minecraft.resources.ResourceLocation
 import org.lwjgl.openal.AL10
+import org.lwjgl.openal.AL11
 import java.util.concurrent.Executors
 
 object ClientMusicPlayer {
@@ -42,13 +43,22 @@ object ClientMusicPlayer {
     private var loadToken: Long = 0
     private var pendingSyncPacket: MusicSyncPacket? = null
 
+    private fun syncSourceGain(mc: Minecraft) {
+        if (customTrackSource == -1 || inJukeboxRange) return
+        val musicVol = mc.options.getSoundSourceVolume(SoundSource.MUSIC)
+        val masterVol = mc.options.getSoundSourceVolume(SoundSource.MASTER)
+        lastMusicVol = musicVol
+        lastMasterVol = masterVol
+        AL10.alSourcef(customTrackSource, AL10.AL_GAIN, musicVol * masterVol)
+    }
+
     private data class PreparedLoad(
         val trackId: String,
         val startPositionMs: Long,
         val specificSound: String,
         val startPaused: Boolean,
         val resolvedName: String,
-        val preparedAudio: CustomTrackPlayer.PreparedAudio?
+        val preparedAudio: CustomTrackPlayer.AudioStream?
     )
 
     private fun suppressVanillaMusic(mc: Minecraft = Minecraft.getInstance()) {
@@ -111,7 +121,13 @@ object ClientMusicPlayer {
                     }
                 }
                 MusicSyncPacket.Action.OPEN_GUI -> {
-
+                }
+                MusicSyncPacket.Action.SEEK -> {
+                    if (isLoading) {
+                        pendingSyncPacket = packet
+                    } else {
+                        seekInPlace(packet.trackId, packet.startPositionMs)
+                    }
                 }
             }
         }
@@ -157,7 +173,7 @@ object ClientMusicPlayer {
                     logger.warn("Custom track data not cached: $fileName")
                     PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
                 } else {
-                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, CustomTrackPlayer.decode(trackData))
+                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, CustomTrackPlayer.prepareStream(trackData))
                 }
             } else {
                 val resolved = if (specific.isNotEmpty()) {
@@ -203,7 +219,7 @@ object ClientMusicPlayer {
                     pausedPosition = 0
                     if (failedTrack != null) {
                         PacketHandler.sendToServer(MusicClientInfoPacket(
-                            action = MusicClientInfoPacket.Action.TRACK_FINISHED,
+                            action = MusicClientInfoPacket.Action.LOAD_FAILED,
                             trackId = failedTrack,
                             durationMs = 0
                         ))
@@ -212,7 +228,18 @@ object ClientMusicPlayer {
                     return@execute
                 }
 
-                val source = CustomTrackPlayer.playPrepared(preparedAudio, prepared.startPositionMs)
+                val initialGain = if (inJukeboxRange) {
+                    0.0f
+                } else {
+                    mc.options.getSoundSourceVolume(SoundSource.MUSIC) *
+                        mc.options.getSoundSourceVolume(SoundSource.MASTER)
+                }
+                val source = CustomTrackPlayer.playStream(
+                    preparedAudio,
+                    prepared.startPositionMs,
+                    gain = initialGain,
+                    startPaused = prepared.startPaused
+                )
                 if (source == -1) {
                     logger.error("Failed to start prepared track: ${prepared.resolvedName}")
                     val failedTrack = currentTrack
@@ -222,7 +249,7 @@ object ClientMusicPlayer {
                     pausedPosition = 0
                     if (failedTrack != null) {
                         PacketHandler.sendToServer(MusicClientInfoPacket(
-                            action = MusicClientInfoPacket.Action.TRACK_FINISHED,
+                            action = MusicClientInfoPacket.Action.LOAD_FAILED,
                             trackId = failedTrack,
                             durationMs = 0
                         ))
@@ -232,13 +259,15 @@ object ClientMusicPlayer {
                 }
 
                 customTrackSource = source
+                lastMusicVol = -1f
+                lastMasterVol = -1f
+                syncSourceGain(mc)
                 trackStartTime = System.currentTimeMillis() - prepared.startPositionMs
                 playStartTime = System.currentTimeMillis()
                 isPlaying = true
                 isPaused = prepared.startPaused
                 if (prepared.startPaused) {
                     pausedPosition = prepared.startPositionMs
-                    AL10.alSourcePause(source)
                 }
 
                 logger.info(
@@ -391,6 +420,19 @@ object ClientMusicPlayer {
         logger.info("Music synced resumed from ${positionMs}ms")
     }
 
+    private fun seekInPlace(trackId: String, positionMs: Long) {
+        if (currentTrack != trackId || !isPlaying || customTrackSource == -1) {
+            playMusic(trackId, positionMs)
+            return
+        }
+        trackStartTime = System.currentTimeMillis() - positionMs
+        if (isPaused) {
+            pausedPosition = positionMs
+        }
+        CustomTrackPlayer.seek(customTrackSource, positionMs)
+        logger.info("Seeked in place to ${positionMs}ms")
+    }
+
     fun updateStatus(packet: MusicStatusPacket) {
         musyncActive = true
         currentStatus = packet
@@ -412,7 +454,7 @@ object ClientMusicPlayer {
     fun getCurrentPositionMs(): Long {
         return when {
             isLoading -> loadingPositionMs
-            isPaused -> pausedPosition
+            isPaused || gamePaused -> pausedPosition
             isPlaying -> System.currentTimeMillis() - trackStartTime
             else -> 0
         }
@@ -421,6 +463,7 @@ object ClientMusicPlayer {
     fun onClientTick() {
 
         val mc = Minecraft.getInstance()
+        ClientTrackManager.onClientTick()
 
         if (musyncActive) {
             suppressVanillaMusic(mc)
@@ -439,11 +482,7 @@ object ClientMusicPlayer {
                         AL10.alSourcef(customTrackSource, AL10.AL_GAIN, 0.0f)
                     }
                 } else {
-                    if (customTrackSource != -1) {
-                        val musicVol = mc.options.getSoundSourceVolume(SoundSource.MUSIC)
-                        val masterVol = mc.options.getSoundSourceVolume(SoundSource.MASTER)
-                        AL10.alSourcef(customTrackSource, AL10.AL_GAIN, musicVol * masterVol)
-                    }
+                    syncSourceGain(mc)
                 }
             }
         }
@@ -451,9 +490,7 @@ object ClientMusicPlayer {
             val musicVol = mc.options.getSoundSourceVolume(SoundSource.MUSIC)
             val masterVol = mc.options.getSoundSourceVolume(SoundSource.MASTER)
             if (musicVol != lastMusicVol || masterVol != lastMasterVol) {
-                lastMusicVol = musicVol
-                lastMasterVol = masterVol
-                AL10.alSourcef(customTrackSource, AL10.AL_GAIN, musicVol * masterVol)
+                syncSourceGain(mc)
             }
         }
         if (mc.isLocalServer) {

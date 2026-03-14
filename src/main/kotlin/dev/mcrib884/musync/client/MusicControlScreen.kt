@@ -119,10 +119,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         addRenderableWidget(maxDelayField!!)
 
         val status = ClientMusicPlayer.getCurrentStatus()
-        if (status != null && status.customMinDelay >= 0) {
-            minDelayField!!.value = status.customMinDelay.toString()
-            maxDelayField!!.value = status.customMaxDelay.toString()
-        }
+        syncDelayFields(status)
 
         val smallBtnW = 44
         val applyResetY = delayY + delayBoxH + 4
@@ -180,6 +177,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.drawCenteredString(font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
         val status = ClientMusicPlayer.getCurrentStatus()
+        syncDelayFields(status)
         val ownPosition = if (status != null && status.isPlaying && status.currentTrack != null) {
             ClientMusicPlayer.getCurrentPositionMs()
         } else {
@@ -405,6 +403,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.drawCenteredString(poseStack, font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
         val status = ClientMusicPlayer.getCurrentStatus()
+        syncDelayFields(status)
         val ownPosition = if (status != null && status.isPlaying && status.currentTrack != null) {
             ClientMusicPlayer.getCurrentPositionMs()
         } else {
@@ -413,15 +412,25 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val playerDimId = Minecraft.getInstance().player?.entityLevel()?.dimension()?.location()?.toString() ?: "minecraft:overworld"
         val localLoading = ClientMusicPlayer.isLoading() && viewedDimId == playerDimId
         val localLoadingTrack = if (localLoading) ClientMusicPlayer.getLoadingTrack() else null
-        val displayDimSt = if (viewedDimId != playerDimId) status?.activeDimensions?.find { it.id == viewedDimId } else null
+        val usePrimaryDisplay = status?.priorityActive == true || viewedDimId == "minecraft:overworld"
+        val displayDimSt = if (!usePrimaryDisplay) status?.activeDimensions?.find { it.id == viewedDimId } else null
         val displayTrack = localLoadingTrack ?: displayDimSt?.currentTrack ?: status?.currentTrack
         val displayResolved = displayDimSt?.resolvedName ?: status?.resolvedName ?: ""
         val displayIsPlaying = if (localLoading) false else (displayDimSt?.isPlaying ?: (status?.isPlaying == true))
         val displayDuration: Long = displayDimSt?.durationMs ?: (status?.durationMs ?: 0)
-        val rawDisplayPosition: Long = displayDimSt?.currentPositionMs ?: ownPosition
-        val displayPosition: Long = if (displayDimSt != null && displayDimSt.isPlaying)
-            (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDimSt.durationMs.coerceAtLeast(rawDisplayPosition))
-        else rawDisplayPosition
+        val rawDisplayPosition: Long = when {
+            viewedDimId == playerDimId -> ownPosition
+            displayDimSt != null -> displayDimSt.currentPositionMs
+            else -> status?.currentPositionMs ?: 0
+        }
+        val displayPosition: Long = when {
+            viewedDimId == playerDimId -> rawDisplayPosition
+            displayDimSt != null && displayDimSt.isPlaying ->
+                (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDimSt.durationMs.coerceAtLeast(rawDisplayPosition))
+            usePrimaryDisplay && status?.isPlaying == true ->
+                (rawDisplayPosition + ClientMusicPlayer.getStatusAge()).coerceAtMost(displayDuration.coerceAtLeast(rawDisplayPosition))
+            else -> rawDisplayPosition
+        }
         val displayWaiting = displayDimSt?.waitingForNextTrack ?: (status?.waitingForNextTrack == true)
         val displayTicksSince = displayDimSt?.ticksSinceLastMusic ?: (status?.ticksSinceLastMusic ?: 0)
         val displayDelayTicks = displayDimSt?.nextMusicDelayTicks ?: (status?.nextMusicDelayTicks ?: 0)
@@ -656,8 +665,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             val flyoutDims3 = status3?.activeDimensions?.filter { it.players.isNotEmpty() && it.id != viewedDimId }.orEmpty()
             val gap = 2
             for ((i, dim) in flyoutDims3.withIndex()) {
-                val by = dimBtnY + topBtnSize + gap + i * (topBtnSize + gap)
-                if (mxi in dimBtnX until dimBtnX + topBtnSize && myi in by until by + topBtnSize) {
+                val bx = dimBtnX - gap - (i + 1) * (topBtnSize + gap) + gap
+                if (mxi in bx until bx + topBtnSize && myi in dimBtnY until dimBtnY + topBtnSize) {
                     viewedDimId = dim.id
                     dimFlyoutOpen = false
                     sendControl(MusicControlPacket.Action.REQUEST_SYNC)
@@ -701,6 +710,16 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val max = maxStr.toIntOrNull()
         if (min == null || max == null || min < 0 || max < min) return
         sendControl(MusicControlPacket.Action.SET_DELAY, trackId = "$min:$max")
+    }
+
+    private fun syncDelayFields(status: MusicStatusPacket?) {
+        val minField = minDelayField ?: return
+        val maxField = maxDelayField ?: return
+        if (minField.isFocused || maxField.isFocused) return
+        val minValue = if (status != null && status.customMinDelay >= 0) status.customMinDelay.toString() else ""
+        val maxValue = if (status != null && status.customMaxDelay >= 0) status.customMaxDelay.toString() else ""
+        if (minField.value != minValue) minField.value = minValue
+        if (maxField.value != maxValue) maxField.value = maxValue
     }
 
     private fun sendControl(action: MusicControlPacket.Action, trackId: String? = null) {
@@ -825,16 +844,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             return
         }
         val gap = 2
-        val totalH = topBtnSize + gap + flyoutDims.size * topBtnSize + (flyoutDims.size - 1).coerceAtLeast(0) * gap
-        val inCombined = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + totalH
+        val totalW = topBtnSize + gap + flyoutDims.size * topBtnSize + (flyoutDims.size - 1).coerceAtLeast(0) * gap
+        val flyoutStartX = dimBtnX - gap - flyoutDims.size * topBtnSize - (flyoutDims.size - 1).coerceAtLeast(0) * gap
+        val inCombined = mouseX in flyoutStartX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
         if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) dimFlyoutOpen = true
         if (!inCombined) dimFlyoutOpen = false
         if (!dimFlyoutOpen) return
 
         for ((i, dim) in flyoutDims.withIndex()) {
-            val by = dimBtnY + topBtnSize + gap + i * (topBtnSize + gap)
-            val isHovered = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in by until by + topBtnSize
-            drawCustomTopBtn(graphics, dimBtnX, by, getDimLabel(dim.id), isHovered)
+            val bx = dimBtnX - gap - (i + 1) * (topBtnSize + gap) + gap
+            val isHovered = mouseX in bx until bx + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
+            drawCustomTopBtn(graphics, bx, dimBtnY, getDimLabel(dim.id), isHovered)
             if (isHovered) {
                 val lines = buildList {
                     add(Component.literal(getDimDisplayName(dim.id)).visualOrderText)
@@ -882,23 +902,23 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             return
         }
         val gap = 2
-        val totalH = topBtnSize + gap + flyoutDims.size * topBtnSize + (flyoutDims.size - 1).coerceAtLeast(0) * gap
-        val inCombined = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + totalH
+        val flyoutStartX = dimBtnX - gap - flyoutDims.size * topBtnSize - (flyoutDims.size - 1).coerceAtLeast(0) * gap
+        val inCombined = mouseX in flyoutStartX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
         if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) dimFlyoutOpen = true
         if (!inCombined) dimFlyoutOpen = false
         if (!dimFlyoutOpen) return
 
         for ((i, dim) in flyoutDims.withIndex()) {
-            val by = dimBtnY + topBtnSize + gap + i * (topBtnSize + gap)
-            val isHovered = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in by until by + topBtnSize
+            val bx = dimBtnX - gap - (i + 1) * (topBtnSize + gap) + gap
+            val isHovered = mouseX in bx until bx + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
             val lbl = getDimLabel(dim.id)
             val bg = if (isHovered) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
-            GuiComponent.fill(poseStack, dimBtnX, by, dimBtnX + topBtnSize, by + topBtnSize, bg)
-            GuiComponent.fill(poseStack, dimBtnX, by, dimBtnX + topBtnSize, by + 1, 0xFF00CC66.toInt())
-            GuiComponent.fill(poseStack, dimBtnX, by, dimBtnX + 1, by + topBtnSize, 0xFF00CC66.toInt())
-            GuiComponent.fill(poseStack, dimBtnX + topBtnSize - 1, by, dimBtnX + topBtnSize, by + topBtnSize, 0xFF00CC66.toInt())
-            GuiComponent.fill(poseStack, dimBtnX, by + topBtnSize - 1, dimBtnX + topBtnSize, by + topBtnSize, 0xFF00CC66.toInt())
-            GuiComponent.drawString(poseStack, font, lbl, dimBtnX + (topBtnSize - font.width(lbl)) / 2, by + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
+            GuiComponent.fill(poseStack, bx, dimBtnY, bx + topBtnSize, dimBtnY + topBtnSize, bg)
+            GuiComponent.fill(poseStack, bx, dimBtnY, bx + topBtnSize, dimBtnY + 1, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, bx, dimBtnY, bx + 1, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, bx + topBtnSize - 1, dimBtnY, bx + topBtnSize, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
+            GuiComponent.fill(poseStack, bx, dimBtnY + topBtnSize - 1, bx + topBtnSize, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
+            GuiComponent.drawString(poseStack, font, lbl, bx + (topBtnSize - font.width(lbl)) / 2, dimBtnY + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
             if (isHovered) {
                 renderComponentTooltip(poseStack, listOf(
                     Component.literal(getDimDisplayName(dim.id)),

@@ -6,7 +6,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
@@ -24,7 +24,8 @@ data class MusicClientInfoPacket(
 //?}
     enum class Action {
         REPORT_DURATION,
-        TRACK_FINISHED
+        TRACK_FINISHED,
+        LOAD_FAILED
     }
 
     companion object {
@@ -37,9 +38,9 @@ data class MusicClientInfoPacket(
 
         fun encode(packet: MusicClientInfoPacket, buf: FriendlyByteBuf) {
             buf.writeEnum(packet.action)
-            buf.writeUtf(packet.trackId)
+            PacketIO.writeUtfBounded(buf, packet.trackId, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeLong(packet.durationMs)
-            buf.writeUtf(packet.resolvedName)
+            PacketIO.writeUtfBounded(buf, packet.resolvedName, PacketIO.MAX_SOUND_ID_LENGTH)
         }
 
         fun decode(buf: FriendlyByteBuf): MusicClientInfoPacket {
@@ -51,16 +52,7 @@ data class MusicClientInfoPacket(
             )
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: MusicClientInfoPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer
-                if (sender != null) {
-                    dev.mcrib884.musync.server.MusicManager.handleClientInfo(packet, sender)
-                }
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: MusicClientInfoPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
                 val sender = ctx.get().sender
@@ -70,6 +62,15 @@ data class MusicClientInfoPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: MusicClientInfoPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer
+                if (sender != null) {
+                    dev.mcrib884.musync.server.MusicManager.handleClientInfo(packet, sender)
+                }
+            }
+        }*/
         //?}
     }
 }

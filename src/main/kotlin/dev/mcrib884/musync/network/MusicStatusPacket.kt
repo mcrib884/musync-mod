@@ -6,7 +6,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
@@ -59,26 +59,27 @@ data class MusicStatusPacket(
         //?}
 
         fun encode(packet: MusicStatusPacket, buf: FriendlyByteBuf) {
-            PacketIO.writeNullableUtf(buf, packet.currentTrack)
+            PacketIO.writeNullableUtf(buf, packet.currentTrack, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeLong(packet.currentPositionMs)
             buf.writeLong(packet.durationMs)
             buf.writeBoolean(packet.isPlaying)
-            PacketIO.writeUtfList(buf, packet.queue)
+            PacketIO.writeUtfList(buf, packet.queue, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeEnum(packet.mode)
             buf.writeBoolean(packet.priorityActive)
-            buf.writeUtf(packet.resolvedName)
+            PacketIO.writeUtfBounded(buf, packet.resolvedName, PacketIO.MAX_SOUND_ID_LENGTH)
             buf.writeBoolean(packet.waitingForNextTrack)
             buf.writeInt(packet.ticksSinceLastMusic)
             buf.writeInt(packet.nextMusicDelayTicks)
             buf.writeInt(packet.customMinDelay)
             buf.writeInt(packet.customMaxDelay)
             buf.writeBoolean(packet.syncOverworld)
-            buf.writeInt(packet.activeDimensions.size)
-            for (dimension in packet.activeDimensions) {
-                buf.writeUtf(dimension.id)
-                PacketIO.writeUtfList(buf, dimension.players)
-                PacketIO.writeNullableUtf(buf, dimension.currentTrack)
-                buf.writeUtf(dimension.resolvedName)
+            val clampedDimensions = packet.activeDimensions.take(PacketIO.MAX_DIMENSION_ENTRIES)
+            buf.writeInt(clampedDimensions.size)
+            for (dimension in clampedDimensions) {
+                PacketIO.writeUtfBounded(buf, dimension.id, PacketIO.MAX_DIMENSION_ID_LENGTH)
+                PacketIO.writeUtfList(buf, dimension.players, PacketIO.MAX_PLAYER_NAME_LENGTH)
+                PacketIO.writeNullableUtf(buf, dimension.currentTrack, PacketIO.MAX_TRACK_ID_LENGTH)
+                PacketIO.writeUtfBounded(buf, dimension.resolvedName, PacketIO.MAX_SOUND_ID_LENGTH)
                 buf.writeBoolean(dimension.isPlaying)
                 buf.writeLong(dimension.currentPositionMs)
                 buf.writeLong(dimension.durationMs)
@@ -125,13 +126,7 @@ data class MusicStatusPacket(
             )
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: MusicStatusPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                dev.mcrib884.musync.client.ClientMusicPlayer.updateStatus(packet)
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: MusicStatusPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
 
@@ -139,6 +134,12 @@ data class MusicStatusPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: MusicStatusPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.ClientMusicPlayer.updateStatus(packet)
+            }
+        }*/
         //?}
     }
 }

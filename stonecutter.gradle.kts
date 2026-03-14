@@ -12,7 +12,7 @@ stonecutter active "1.20.1-forge"
 
 stonecutter parameters {
 	constants {
-		match(node.metadata.project.substringAfterLast("-"), "forge", "neoforge")
+		match(node.metadata.project.substringAfterLast("-"), "forge", "neoforge", "fabric")
 	}
 }
 

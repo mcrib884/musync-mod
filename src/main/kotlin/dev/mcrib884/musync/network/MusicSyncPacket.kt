@@ -6,7 +6,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
@@ -24,7 +24,7 @@ data class MusicSyncPacket(
 ) {
 //?}
     enum class Action {
-        PLAY, STOP, PAUSE, RESUME, SKIP, OPEN_GUI
+        PLAY, STOP, PAUSE, RESUME, SKIP, OPEN_GUI, SEEK
     }
 
     companion object {
@@ -36,11 +36,11 @@ data class MusicSyncPacket(
         //?}
 
         fun encode(packet: MusicSyncPacket, buf: FriendlyByteBuf) {
-            buf.writeUtf(packet.trackId)
+            PacketIO.writeUtfBounded(buf, packet.trackId, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeLong(packet.startPositionMs)
             buf.writeLong(packet.serverTimeMs)
             buf.writeEnum(packet.action)
-            buf.writeUtf(packet.specificSound)
+            PacketIO.writeUtfBounded(buf, packet.specificSound, PacketIO.MAX_SOUND_ID_LENGTH)
         }
 
         fun decode(buf: FriendlyByteBuf): MusicSyncPacket {
@@ -53,18 +53,7 @@ data class MusicSyncPacket(
             )
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: MusicSyncPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                if (packet.action == Action.OPEN_GUI) {
-                    val mc = net.minecraft.client.Minecraft.getInstance()
-                    mc.execute { mc.setScreen(dev.mcrib884.musync.client.MusicControlScreen()) }
-                } else {
-                    dev.mcrib884.musync.client.ClientMusicPlayer.handleSyncPacket(packet)
-                }
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: MusicSyncPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
 
@@ -77,6 +66,17 @@ data class MusicSyncPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: MusicSyncPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                if (packet.action == Action.OPEN_GUI) {
+                    val mc = net.minecraft.client.Minecraft.getInstance()
+                    mc.execute { mc.setScreen(dev.mcrib884.musync.client.MusicControlScreen()) }
+                } else {
+                    dev.mcrib884.musync.client.ClientMusicPlayer.handleSyncPacket(packet)
+                }
+            }
+        }*/
         //?}
     }
 }

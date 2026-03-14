@@ -9,7 +9,8 @@
 		"JukeboxBlockEntityMixin",
 		"MinecraftMusicMixin",
 		"MusicManagerAccessor",
-		"MusicManagerMixin"
+		"MusicManagerMixin",
+		"WinScreenMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

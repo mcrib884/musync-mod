@@ -18,6 +18,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
     private var panelY = 0
 
     private var closeCountdown = -1
+    private var showingFailedOverlay = false
 
     override fun init() {
         super.init()
@@ -26,22 +27,32 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
     }
 
     fun onDownloadComplete() {
-        closeCountdown = 40
+        val failed = ClientTrackManager.getFailedTracks()
+        if (failed.isNotEmpty()) {
+            showingFailedOverlay = true
+        } else {
+            closeCountdown = 40
+        }
     }
 
     override fun tick() {
         super.tick()
 
-        if (ClientTrackManager.downloadComplete && closeCountdown < 0) {
+        if (!isDownloadDone() && !ClientTrackManager.isDownloading && ClientTrackManager.tracksToDownload.isNotEmpty()) {
+            if (!showingFailedOverlay && closeCountdown < 0) onDownloadComplete()
+        }
+        if (ClientTrackManager.downloadComplete && closeCountdown < 0 && !showingFailedOverlay) {
             onDownloadComplete()
         }
         if (closeCountdown > 0) {
             closeCountdown--
         } else if (closeCountdown == 0) {
-
             Minecraft.getInstance().setScreen(MusicControlScreen())
         }
     }
+
+    private fun isDownloadDone(): Boolean =
+        closeCountdown >= 0 || showingFailedOverlay || ClientTrackManager.downloadComplete
 
     //? if >=1.21 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
@@ -143,13 +154,16 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
         val maxVisible = 5
         val listStartY = listY + 14
 
+        val failedSet = ClientTrackManager.getFailedTracks().toSet()
         for (i in 0 until minOf(maxVisible, totalCount)) {
             val idx = i
             val y = listStartY + i * 12
             val (name, size) = tracks[idx]
-            val displayName = name.replace("_", " ").replaceFirstChar { it.uppercase() }
+            val displayName = ClientTrackManager.displayTrackName(name).replace("_", " ").replaceFirstChar { it.uppercase() }
+            val isFailed = name in failedSet
 
             val (statusIcon, statusColor) = when {
+                isFailed -> "\u2718" to 0xFFFF5555.toInt()
                 idx < currentIdx -> "\u2714" to 0xFF00FF88.toInt()
                 idx == currentIdx -> "\u21E9" to 0xFF00AAFF.toInt()
                 else -> "\u25CB" to 0xFF555555.toInt()
@@ -169,6 +183,10 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
         }
 
         super.render(graphics, mouseX, mouseY, partialTick)
+
+        if (showingFailedOverlay) {
+            renderFailedOverlay(graphics, mouseX, mouseY)
+        }
     }
     //?} else {
     /*override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, partialTick: Float) {
@@ -264,13 +282,16 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
         val maxVisible = 5
         val listStartY = listY + 14
 
+        val failedSet1919 = ClientTrackManager.getFailedTracks().toSet()
         for (i in 0 until minOf(maxVisible, totalCount)) {
             val idx = i
             val y = listStartY + i * 12
             val (name, size) = tracks[idx]
-            val displayName = name.replace("_", " ").replaceFirstChar { it.uppercase() }
+            val displayName = ClientTrackManager.displayTrackName(name).replace("_", " ").replaceFirstChar { it.uppercase() }
+            val isFailed = name in failedSet1919
 
             val (statusIcon, statusColor) = when {
+                isFailed -> "\u2718" to 0xFFFF5555.toInt()
                 idx < currentIdx -> "\u2714" to 0xFF00FF88.toInt()
                 idx == currentIdx -> "\u21E9" to 0xFF00AAFF.toInt()
                 else -> "\u25CB" to 0xFF555555.toInt()
@@ -290,6 +311,100 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
         }
 
         super.render(poseStack, mouseX, mouseY, partialTick)
+
+        if (showingFailedOverlay) {
+            renderFailedOverlay1919(poseStack, mouseX, mouseY)
+        }
+    }*/
+    //?}
+
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        if (showingFailedOverlay && button == 0) {
+            val failed = ClientTrackManager.getFailedTracks()
+            val overlayW = 260
+            val overlayH = 60 + failed.size.coerceAtMost(8) * 12
+            val ox = (width - overlayW) / 2
+            val oy = (height - overlayH) / 2
+            val closeX = ox + overlayW - 14
+            val closeY = oy + 4
+            if (mouseX >= closeX && mouseX <= closeX + 10 && mouseY >= closeY && mouseY <= closeY + 10) {
+                showingFailedOverlay = false
+                Minecraft.getInstance().setScreen(MusicControlScreen())
+                return true
+            }
+            if (mouseX < ox || mouseX > ox + overlayW || mouseY < oy || mouseY > oy + overlayH) {
+                showingFailedOverlay = false
+                Minecraft.getInstance().setScreen(MusicControlScreen())
+                return true
+            }
+            return true
+        }
+        return super.mouseClicked(mouseX, mouseY, button)
+    }
+
+    //? if >=1.20 {
+    private fun renderFailedOverlay(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {
+        val failed = ClientTrackManager.getFailedTracks()
+        if (failed.isEmpty()) return
+        val overlayW = 260
+        val overlayH = 60 + failed.size.coerceAtMost(8) * 12
+        val ox = (width - overlayW) / 2
+        val oy = (height - overlayH) / 2
+
+        graphics.fill(0, 0, width, height, 0x88000000.toInt())
+        graphics.fill(ox - 2, oy - 2, ox + overlayW + 2, oy + overlayH + 2, 0xFF1A1A2E.toInt())
+        graphics.fill(ox, oy, ox + overlayW, oy + overlayH, 0xF0101020.toInt())
+        graphics.fill(ox, oy, ox + overlayW, oy + 2, 0xFFFF5555.toInt())
+
+        val closeX = ox + overlayW - 14
+        val closeY = oy + 4
+        val closeHov = mouseX >= closeX && mouseX <= closeX + 10 && mouseY >= closeY && mouseY <= closeY + 10
+        graphics.drawString(font, "\u2716", closeX, closeY, if (closeHov) 0xFFFF8888.toInt() else 0xFFAA5555.toInt())
+
+        val cx = ox + overlayW / 2
+        graphics.drawCenteredString(font, "\u26A0 Failed Tracks", cx, oy + 6, 0xFFFF5555.toInt())
+        graphics.drawCenteredString(font, "These tracks could not sync and won't play:", cx, oy + 20, 0xFF999999.toInt())
+
+        val listStartY = oy + 36
+        for ((i, name) in failed.take(8).withIndex()) {
+            val displayName = ClientTrackManager.displayTrackName(name).replace("_", " ").replaceFirstChar { it.uppercase() }
+            graphics.drawString(font, "\u2718 $displayName", ox + 12, listStartY + i * 12, 0xFFFF6666.toInt())
+        }
+        if (failed.size > 8) {
+            graphics.drawString(font, "... and ${failed.size - 8} more", ox + 12, listStartY + 8 * 12, 0xFF886666.toInt())
+        }
+    }
+    //?} else {
+    /*private fun renderFailedOverlay1919(poseStack: PoseStack, mouseX: Int, mouseY: Int) {
+        val failed = ClientTrackManager.getFailedTracks()
+        if (failed.isEmpty()) return
+        val overlayW = 260
+        val overlayH = 60 + failed.size.coerceAtMost(8) * 12
+        val ox = (width - overlayW) / 2
+        val oy = (height - overlayH) / 2
+
+        GuiComponent.fill(poseStack, 0, 0, width, height, 0x88000000.toInt())
+        GuiComponent.fill(poseStack, ox - 2, oy - 2, ox + overlayW + 2, oy + overlayH + 2, 0xFF1A1A2E.toInt())
+        GuiComponent.fill(poseStack, ox, oy, ox + overlayW, oy + overlayH, 0xF0101020.toInt())
+        GuiComponent.fill(poseStack, ox, oy, ox + overlayW, oy + 2, 0xFFFF5555.toInt())
+
+        val closeX = ox + overlayW - 14
+        val closeY = oy + 4
+        val closeHov = mouseX >= closeX && mouseX <= closeX + 10 && mouseY >= closeY && mouseY <= closeY + 10
+        GuiComponent.drawString(poseStack, font, "\u2716", closeX, closeY, if (closeHov) 0xFFFF8888.toInt() else 0xFFAA5555.toInt())
+
+        val cx = ox + overlayW / 2
+        GuiComponent.drawCenteredString(poseStack, font, "\u26A0 Failed Tracks", cx, oy + 6, 0xFFFF5555.toInt())
+        GuiComponent.drawCenteredString(poseStack, font, "These tracks could not sync and won't play:", cx, oy + 20, 0xFF999999.toInt())
+
+        val listStartY = oy + 36
+        for ((i, name) in failed.take(8).withIndex()) {
+            val displayName = ClientTrackManager.displayTrackName(name).replace("_", " ").replaceFirstChar { it.uppercase() }
+            GuiComponent.drawString(poseStack, font, "\u2718 $displayName", ox + 12, listStartY + i * 12, 0xFFFF6666.toInt())
+        }
+        if (failed.size > 8) {
+            GuiComponent.drawString(poseStack, font, "... and ${failed.size - 8} more", ox + 12, listStartY + 8 * 12, 0xFF886666.toInt())
+        }
     }*/
     //?}
 

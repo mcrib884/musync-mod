@@ -14,12 +14,16 @@ object PacketIO {
     const val MAX_PLAYERS_PER_DIMENSION = 128
     const val MAX_TRACK_SIZE_BYTES = 50 * 1024 * 1024
 
-    fun writeNullableUtf(buf: FriendlyByteBuf, value: String?) {
+    fun writeUtfBounded(buf: FriendlyByteBuf, value: String, maxLength: Int) {
+        buf.writeUtf(value, maxLength)
+    }
+
+    fun writeNullableUtf(buf: FriendlyByteBuf, value: String?, maxLength: Int = MAX_TRACK_ID_LENGTH) {
         if (value == null) {
             buf.writeBoolean(false)
         } else {
             buf.writeBoolean(true)
-            buf.writeUtf(value)
+            writeUtfBounded(buf, value, maxLength)
         }
     }
 
@@ -27,10 +31,10 @@ object PacketIO {
         return if (buf.readBoolean()) buf.readUtf(maxLength) else null
     }
 
-    fun writeUtfList(buf: FriendlyByteBuf, values: List<String>) {
+    fun writeUtfList(buf: FriendlyByteBuf, values: List<String>, maxLength: Int = MAX_TRACK_ID_LENGTH) {
         buf.writeInt(values.size)
         for (value in values) {
-            buf.writeUtf(value)
+            writeUtfBounded(buf, value, maxLength)
         }
     }
 

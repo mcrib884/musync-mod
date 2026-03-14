@@ -18,9 +18,7 @@ import net.minecraft.server.level.ServerPlayer
 
 object MuSyncCommand {
 
-
-
-    private val TRACK_MAP = mutableMapOf(
+    private val TRACK_MAP = mapOf(
 
         "minecraft" to "minecraft:music.game|music/game/calm1",
         "clark" to "minecraft:music.game|music/game/calm2",
@@ -56,7 +54,7 @@ object MuSyncCommand {
         "warmth" to "minecraft:music.nether.nether_wastes|music/game/nether/warmth",
         "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes|music/game/nether/ballad_of_the_cats",
 
-        "the_end" to "minecraft:music.end|music/game/end/end",
+        "the_end" to "minecraft:music.end|music/game/end/the_end",
         "boss" to "minecraft:music.dragon|music/game/end/boss",
         "alpha" to "minecraft:music.credits|music/game/end/credits",
 
@@ -352,9 +350,6 @@ object MuSyncCommand {
 
                             if (waiting && !playing && !paused) {
                                 val ticksRemaining = (ticksTotal - ticksElapsed).coerceAtLeast(0)
-                                val elapsedSec = ticksElapsed / 20.0
-                                val totalSec = ticksTotal / 20.0
-                                val remainSec = ticksRemaining / 20.0
                                 ctx.source.sendSuccessCompat(
                                     { Component.literal("Delay: ${formatTickTime(ticksElapsed)} / ${formatTickTime(ticksTotal)} (${formatTickTime(ticksRemaining)} remaining)") },
                                     false
@@ -523,7 +518,7 @@ object MuSyncCommand {
     fun getAllTrackNames(): List<String> = TRACK_MAP.keys.toList()
 
     fun getAllTracksForBrowser(): List<Pair<String, String>> {
-        val result = mutableListOf<Pair<String, String>>()
+        val entries = linkedMapOf<String, String>()
 
         val knownSpecificSounds = mutableSetOf<String>()
         val aliasedSoundEvents = mutableSetOf<String>()
@@ -538,7 +533,7 @@ object MuSyncCommand {
 
         for (key in TRACK_MAP.keys) {
             val displayName = dev.mcrib884.musync.TrackNames.formatTrack(TRACK_MAP.getValue(key))
-            result.add(key to displayName)
+            entries.putIfAbsent(key, displayName)
         }
 
         soundEventKeys().forEach { loc ->
@@ -546,24 +541,11 @@ object MuSyncCommand {
             val path = loc.path
 
             if (path.contains("music") || path.startsWith("music_disc.")) {
-                var skipPoolEntry = false
-                if (fullId in aliasedSoundEvents) {
-                    try {
-                        val events = net.minecraft.client.Minecraft.getInstance().soundManager.getSoundEvent(loc)
-                        val resolvedFiles = linkedSetOf<String>()
-                        events?.list?.forEach { weighted ->
-                            val sound = weighted.getSound(net.minecraft.util.RandomSource.create())
-                            if (sound.type != net.minecraft.client.resources.sounds.Sound.Type.FILE) return@forEach
-                            resolvedFiles.add("${sound.location.namespace}:${sound.location.path}")
-                        }
-                        skipPoolEntry = resolvedFiles.size == 1 && resolvedFiles.first() in knownSpecificSounds
-                    } catch (_: Exception) { }
-                }
-                if (skipPoolEntry) return@forEach
+                if (fullId in aliasedSoundEvents) return@forEach
 
                 val displayName = DISPLAY_NAMES[fullId]
                     ?: formatDiscoveredTrackName(fullId)
-                result.add(fullId to displayName)
+                entries.putIfAbsent(fullId, displayName)
             }
         }
 
@@ -573,6 +555,8 @@ object MuSyncCommand {
             soundEventKeys().forEach { loc ->
                 if (!loc.path.contains("music") && !loc.path.startsWith("music_disc.")) return@forEach
                 val fullEventId = loc.toString()
+                if (fullEventId in aliasedSoundEvents) return@forEach
+                if (fullEventId.contains("music_disc")) return@forEach
                 val poolName = DISPLAY_NAMES[fullEventId] ?: formatDiscoveredTrackName(fullEventId)
 
                 try {
@@ -590,31 +574,50 @@ object MuSyncCommand {
                         val friendlyOgg = dev.mcrib884.musync.TrackNames.formatOggName(qualifiedPath)
                         val prefix = if (soundLoc.namespace != "minecraft") "[${soundLoc.namespace}] " else ""
                         val displayName = "$prefix$friendlyOgg ($poolName)"
-                        result.add(key to displayName)
+                        entries.putIfAbsent(key, displayName)
                         knownSpecificSounds.add(qualifiedPath)
                     }
                 } catch (_: Exception) { }
             }
         } catch (_: Exception) { }
 
-        try {
-            dev.mcrib884.musync.client.ClientTrackManager.getServerCustomTrackNames().forEach { name ->
-                if (!TRACK_MAP.containsKey(name)) {
-                    val displayName = "[Custom] " + name.replace("_", " ").replaceFirstChar { it.uppercase() }
-                    result.add(name to displayName)
-                }
-            }
-        } catch (_: Exception) {
-
-            dev.mcrib884.musync.server.MusicManager.getCustomTracks().forEach { name ->
-                if (!TRACK_MAP.containsKey(name)) {
-                    val displayName = "[Custom] " + name.replace("_", " ").replaceFirstChar { it.uppercase() }
-                    result.add(name to displayName)
-                }
+        dev.mcrib884.musync.client.ClientTrackManager.getServerCustomTrackNames().forEach { name ->
+            if (!TRACK_MAP.containsKey(name)) {
+                val displayName = "[Custom] " + name.replace("_", " ").replaceFirstChar { it.uppercase() }
+                entries.putIfAbsent(name, displayName)
             }
         }
 
-        return result.sortedBy { it.second }
+        fun entryEventId(key: String): String {
+            if (key.startsWith("custom:")) return "custom"
+            val direct = TRACK_MAP[key] ?: key
+            return if (direct.contains("|")) direct.substringBefore("|") else direct
+        }
+
+        fun categoryRank(key: String): Int {
+            val eventId = entryEventId(key)
+            if (key.startsWith("custom:")) return 8
+            if (eventId.startsWith("minecraft:music.menu")) return 0
+            if (eventId.startsWith("minecraft:music.game") || eventId.startsWith("minecraft:music.creative") || eventId.startsWith("minecraft:music.overworld")) return 1
+            if (eventId.startsWith("minecraft:music.nether")) return 2
+            if (eventId == "minecraft:music.end") return 3
+            if (eventId == "minecraft:music.dragon") return 4
+            if (eventId == "minecraft:music.credits") return 5
+            if (eventId == "minecraft:music.under_water") return 6
+            if (eventId.contains("music_disc")) return 7
+            if (key.startsWith("[")) return 9
+            return 10
+        }
+
+        return entries
+            .map { it.key to it.value }
+            .sortedWith(
+                compareBy<Pair<String, String>>(
+                    { categoryRank(it.first) },
+                    { it.second.lowercase() },
+                    { it.first.lowercase() }
+                )
+            )
     }
 
     fun toBrowserTrackKey(trackId: String): String {

@@ -17,7 +17,7 @@ A client and server-side mod that synchronizes Minecraft background music across
 - Operator command: `/musync` to control playback, manage the playlist, or trigger immediate syncs.
 
 ## Building
-This mod uses [Stonecutter](https://github.com/kikugie/stonecutter) to build for multiple supported Minecraft versions (1.19.2 and 1.20.1) from a single source tree.
+This mod uses [Stonecutter](https://github.com/kikugie/stonecutter) to build for multiple supported Minecraft versions and loaders from a single source tree.
 
 ### Build All Versions
 To completely build all targets (creates the jars inside `versions/.../build/libs/`):
@@ -36,4 +36,13 @@ To build a specific version using the Gradle wrapper directly, set the Stonecutt
 ```
 ```bash
 ./gradlew 1.21.1-neoforge:build
+```
+```bash
+./gradlew 1.19.2-fabric:build
+```
+```bash
+./gradlew 1.20.1-fabric:build
+```
+```bash
+./gradlew 1.21.1-fabric:build
 ```

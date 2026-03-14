@@ -12,8 +12,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(JukeboxBlockEntity.class)
 public abstract class JukeboxBlockEntityMixin {
 
-    //? if >=1.20 && <1.21 {
-    @Inject(method = "startPlaying", at = @At("TAIL"))
+    //? if >=1.21 {
+    @Inject(method = "onSongChanged", at = @At("TAIL"), require = 0)
+    private void musync$onSongChanged(CallbackInfo ci) {
+        JukeboxBlockEntity self = (JukeboxBlockEntity) (Object) this;
+        Level level = self.getLevel();
+        if (level != null) {
+            BlockPos pos = self.getBlockPos();
+            boolean playing;
+            try {
+                Object songPlayer = self.getClass().getMethod("getSongPlayer").invoke(self);
+                Object result = songPlayer != null ? songPlayer.getClass().getMethod("isPlaying").invoke(songPlayer) : null;
+                playing = result instanceof Boolean && (Boolean) result;
+            } catch (ReflectiveOperationException e) {
+                return;
+            }
+            if (playing) {
+                JukeboxTracker.INSTANCE.onJukeboxStartPlaying(level.dimension(), pos);
+            } else {
+                JukeboxTracker.INSTANCE.onJukeboxStopPlaying(level.dimension(), pos);
+            }
+        }
+    }
+    //?} else if >=1.20 {
+    @Inject(method = "startPlaying", at = @At("TAIL"), require = 0)
     private void musync$onStartPlaying(CallbackInfo ci) {
         JukeboxBlockEntity self = (JukeboxBlockEntity) (Object) this;
         Level level = self.getLevel();
@@ -23,7 +45,7 @@ public abstract class JukeboxBlockEntityMixin {
         }
     }
 
-    @Inject(method = "stopPlaying", at = @At("TAIL"))
+    @Inject(method = "stopPlaying", at = @At("TAIL"), require = 0)
     private void musync$onStopPlaying(CallbackInfo ci) {
         JukeboxBlockEntity self = (JukeboxBlockEntity) (Object) this;
         Level level = self.getLevel();
@@ -32,7 +54,7 @@ public abstract class JukeboxBlockEntityMixin {
             JukeboxTracker.INSTANCE.onJukeboxStopPlaying(level.dimension(), pos);
         }
     }
-    //? } else if <1.20 {
+    //?} else if <1.20 {
     /*
     @Inject(method = "setRecord", at = @At("TAIL"))
     private void musync$onSetRecord(net.minecraft.world.item.ItemStack stack, CallbackInfo ci) {
@@ -58,5 +80,5 @@ public abstract class JukeboxBlockEntityMixin {
         }
     }
     */
-    //? }
+    //?}
 }

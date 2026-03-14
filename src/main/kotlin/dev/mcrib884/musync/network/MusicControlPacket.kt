@@ -6,7 +6,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
@@ -24,7 +24,7 @@ data class MusicControlPacket(
 ) {
 //?}
     enum class Action {
-        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL, HOTLOAD_TRACKS
+        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL, HOTLOAD_TRACKS, CREDITS_SKIP
     }
 
     companion object {
@@ -37,10 +37,10 @@ data class MusicControlPacket(
 
         fun encode(packet: MusicControlPacket, buf: FriendlyByteBuf) {
             buf.writeEnum(packet.action)
-            PacketIO.writeNullableUtf(buf, packet.trackId)
+            PacketIO.writeNullableUtf(buf, packet.trackId, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeNullable(packet.queuePosition, FriendlyByteBuf::writeInt)
             buf.writeLong(packet.seekMs)
-            PacketIO.writeNullableUtf(buf, packet.targetDim)
+            PacketIO.writeNullableUtf(buf, packet.targetDim, PacketIO.MAX_DIMENSION_ID_LENGTH)
         }
 
         fun decode(buf: FriendlyByteBuf): MusicControlPacket {
@@ -53,16 +53,7 @@ data class MusicControlPacket(
             )
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: MusicControlPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer
-                if (sender != null) {
-                    dev.mcrib884.musync.server.MusicManager.handleControlPacket(packet, sender)
-                }
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: MusicControlPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
 
@@ -73,6 +64,15 @@ data class MusicControlPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: MusicControlPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                val sender = ctx.player() as? net.minecraft.server.level.ServerPlayer
+                if (sender != null) {
+                    dev.mcrib884.musync.server.MusicManager.handleControlPacket(packet, sender)
+                }
+            }
+        }*/
         //?}
     }
 }

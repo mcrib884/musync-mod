@@ -1,5 +1,6 @@
 package dev.mcrib884.musync.client
 
+import dev.mcrib884.musync.network.PacketIO
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicLong
@@ -9,7 +10,7 @@ object CustomTrackCache {
 
     private const val MAX_CACHE_BYTES = 200L * 1024 * 1024
     private const val MAX_ENTRIES = 50
-    private const val MAX_PENDING = 20
+    private const val MAX_PENDING = 5
     private const val MAX_TOTAL_CHUNKS = 5000
     private const val PENDING_TIMEOUT_MS = 60_000L
 
@@ -24,6 +25,8 @@ object CustomTrackCache {
     )
 
     private val pending = ConcurrentHashMap<String, PendingTrack>()
+
+    private fun baseName(name: String): String = name.substringBeforeLast('.', name)
 
     fun handleChunk(trackName: String, chunkIndex: Int, totalChunks: Int, data: ByteArray) {
         purgeExpiredPending()
@@ -54,15 +57,32 @@ object CustomTrackCache {
         ClientTrackManager.onChunkProgress(trackName, chunkIndex, totalChunks, acceptedBytes)
 
         if (entry.chunks.size == totalChunks) {
-            val totalSize = entry.chunks.values.sumOf { it.size }
+            val totalSizeLong = entry.chunks.values.sumOf { it.size.toLong() }
+            if (totalSizeLong <= 0L || totalSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES || totalSizeLong > Int.MAX_VALUE.toLong()) {
+                logger.warn("Rejecting assembled track for $trackName due to invalid size: $totalSizeLong")
+                pending.remove(trackName)
+                ClientTrackManager.onTrackFailed(trackName, "invalid assembled size")
+                return
+            }
+            val totalSize = totalSizeLong.toInt()
             val assembled = ByteArray(totalSize)
             var offset = 0
             for (i in 0 until totalChunks) {
-                val chunk = entry.chunks[i] ?: return
+                val chunk = entry.chunks[i]
+                if (chunk == null) {
+                    logger.warn("Missing chunk $i/$totalChunks for $trackName during assembly")
+                    pending.remove(trackName)
+                    ClientTrackManager.onTrackFailed(trackName, "missing chunk $i")
+                    return
+                }
                 System.arraycopy(chunk, 0, assembled, offset, chunk.size)
                 offset += chunk.size
             }
             putWithEviction(trackName, assembled)
+            val base = baseName(trackName)
+            if (base != trackName) {
+                putWithEviction(base, assembled)
+            }
             pending.remove(trackName)
             ClientTrackManager.onTrackDownloaded(trackName, totalChunks, assembled)
             logger.info("Cached custom track: $trackName (${assembled.size} bytes)")
@@ -83,6 +103,7 @@ object CustomTrackCache {
         }
     }
 
+    @Synchronized
     private fun putWithEviction(name: String, data: ByteArray) {
         val old = cache.put(name, data)
         if (old != null) {
@@ -102,7 +123,16 @@ object CustomTrackCache {
         }
     }
 
-    fun get(trackName: String): ByteArray? = cache[trackName]
+    fun get(trackName: String): ByteArray? {
+        cache[trackName]?.let { return it }
+        val base = baseName(trackName)
+        if (base != trackName) {
+            cache[base]?.let { return it }
+        } else {
+            cache.entries.firstOrNull { it.key.startsWith("$trackName.") }?.value?.let { return it }
+        }
+        return null
+    }
 
     fun has(trackName: String): Boolean = cache.containsKey(trackName)
 

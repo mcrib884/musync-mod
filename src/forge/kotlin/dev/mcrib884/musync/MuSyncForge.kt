@@ -43,6 +43,9 @@ class MuSyncForge {
         MinecraftForge.EVENT_BUS.addListener<PlayerEvent.PlayerLoggedOutEvent> { event ->
             (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerLeave(it) }
         }
+        MinecraftForge.EVENT_BUS.addListener<PlayerEvent.PlayerRespawnEvent> { event ->
+            (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerRespawn(it) }
+        }
         MinecraftForge.EVENT_BUS.addListener<PlayerEvent.PlayerChangedDimensionEvent> { event ->
             (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerChangedDimension(event.from, event.to, it) }
         }

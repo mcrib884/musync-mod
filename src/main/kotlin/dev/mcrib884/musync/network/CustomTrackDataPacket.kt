@@ -6,7 +6,7 @@ import net.minecraft.network.FriendlyByteBuf
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 import net.minecraft.resources.ResourceLocation
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
-//?} else {
+//?} else if forge {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
@@ -34,7 +34,7 @@ data class CustomTrackDataPacket(
         //?}
 
         fun encode(packet: CustomTrackDataPacket, buf: FriendlyByteBuf) {
-            buf.writeUtf(packet.trackName)
+            PacketIO.writeUtfBounded(buf, packet.trackName, PacketIO.MAX_TRACK_NAME_LENGTH)
             buf.writeInt(packet.chunkIndex)
             buf.writeInt(packet.totalChunks)
             buf.writeByteArray(packet.data)
@@ -49,15 +49,7 @@ data class CustomTrackDataPacket(
             )
         }
 
-        //? if neoforge {
-        /*fun handleNeo(packet: CustomTrackDataPacket, ctx: IPayloadContext) {
-            ctx.enqueueWork {
-                dev.mcrib884.musync.client.CustomTrackCache.handleChunk(
-                    packet.trackName, packet.chunkIndex, packet.totalChunks, packet.data
-                )
-            }
-        }*/
-        //?} else {
+        //? if forge {
         fun handle(packet: CustomTrackDataPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
                 dev.mcrib884.musync.client.CustomTrackCache.handleChunk(
@@ -66,6 +58,14 @@ data class CustomTrackDataPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?} else if neoforge {
+        /*fun handleNeo(packet: CustomTrackDataPacket, ctx: IPayloadContext) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.CustomTrackCache.handleChunk(
+                    packet.trackName, packet.chunkIndex, packet.totalChunks, packet.data
+                )
+            }
+        }*/
         //?}
     }
 }
