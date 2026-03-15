@@ -7,14 +7,13 @@ import java.io.File
 
 object ClientTrackManager {
 
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
+        private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
     private const val MAX_TRACKS_PER_REQUEST = 3
 
     private fun normalizeInternalName(name: String): String? {
         val normalized = name.lowercase().replace(" ", "_")
         if (!SAFE_INTERNAL_NAME.matches(normalized)) {
-            logger.warn("Rejected unsafe track name: $name")
+            dev.mcrib884.musync.MuSyncLog.warn("Rejected unsafe track name: $name")
             return null
         }
         return normalized
@@ -96,7 +95,7 @@ object ClientTrackManager {
             props.setProperty("cacheEnabled", value.toString())
             file.outputStream().use { props.store(it, "MuSync client settings") }
         } catch (e: Exception) {
-            logger.error("Failed to save MuSync settings: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Failed to save MuSync settings: ${e.message}")
         }
     }
 
@@ -154,10 +153,10 @@ object ClientTrackManager {
                         val localFolder = getLocalFolder()
                         if (!localFolder.exists()) localFolder.mkdirs()
                         cached.copyTo(File(localFolder, cached.name), overwrite = true)
-                        logger.info("Restored cached track '$internalName' from musynccache (${cached.length()} bytes)")
+                        dev.mcrib884.musync.MuSyncLog.info("Restored cached track '$internalName' from musynccache (${cached.length()} bytes)")
                         continue
                     } catch (e: Exception) {
-                        logger.error("Failed to restore cached track '$internalName': ${e.message}")
+                        dev.mcrib884.musync.MuSyncLog.error("Failed to restore cached track '$internalName': ${e.message}")
                     }
                 }
             }
@@ -175,7 +174,7 @@ object ClientTrackManager {
             stallRetries = 0
             pendingRequested.clear()
             lastProgressAtMs = 0L
-            logger.info("All ${manifest.size} custom tracks are synced")
+            dev.mcrib884.musync.MuSyncLog.info("All ${manifest.size} custom tracks are synced")
             cacheAllLocalTracks(manifest)
             isDownloading = false
             downloadComplete = failedTracks.isEmpty()
@@ -194,7 +193,7 @@ object ClientTrackManager {
         pendingRequested.clear()
         lastProgressAtMs = System.currentTimeMillis()
 
-        logger.info("Need to download ${missing.size} custom tracks (${formatSize(totalBytesToDownload)})")
+        dev.mcrib884.musync.MuSyncLog.info("Need to download ${missing.size} custom tracks (${formatSize(totalBytesToDownload)})")
         requestNextBatch()
     }
 
@@ -234,7 +233,7 @@ object ClientTrackManager {
         val saved = saveTrackToDisk(trackName, data)
         if (!saved) {
             failedTracks.add(trackName)
-            logger.warn("Track marked failed and skipped: $trackName")
+            dev.mcrib884.musync.MuSyncLog.warn("Track marked failed and skipped: $trackName")
         }
         pendingRequested.remove(trackName)
 
@@ -253,7 +252,7 @@ object ClientTrackManager {
         if (tracksToDownload[currentDownloadIndex].first != trackName) return
         pendingRequested.remove(trackName)
         failedTracks.add(trackName)
-        logger.warn("Track download failed for '$trackName': $reason")
+        dev.mcrib884.musync.MuSyncLog.warn("Track download failed for '$trackName': $reason")
         advanceDownloadCursor()
     }
 
@@ -275,9 +274,9 @@ object ClientTrackManager {
         stallRetries = 0
 
         if (downloadComplete) {
-            logger.info("All custom tracks downloaded and synced!")
+            dev.mcrib884.musync.MuSyncLog.info("All custom tracks downloaded and synced!")
         } else {
-            logger.warn("Custom track sync finished with ${failedTracks.size} failed track(s): ${failedTracks.joinToString(",")}")
+            dev.mcrib884.musync.MuSyncLog.warn("Custom track sync finished with ${failedTracks.size} failed track(s): ${failedTracks.joinToString(",")}")
             Minecraft.getInstance().execute {
                 val mc = Minecraft.getInstance()
                 val screen = mc.screen
@@ -322,12 +321,12 @@ object ClientTrackManager {
             lastProgressAtMs = now
             currentTrackChunksReceived = 0
             currentTrackTotalChunks = 0
-            logger.warn("Track download stalled, retrying remaining ${remaining.size} track(s) (attempt $stallRetries/$MAX_STALL_RETRIES)")
+            dev.mcrib884.musync.MuSyncLog.warn("Track download stalled, retrying remaining ${remaining.size} track(s) (attempt $stallRetries/$MAX_STALL_RETRIES)")
             PacketHandler.sendToServer(TrackRequestPacket(serverManifestVersion, remaining))
             return
         }
 
-        logger.error("Track download aborted after stall retries; remaining tracks: ${remaining.joinToString(",")}")
+        dev.mcrib884.musync.MuSyncLog.error("Track download aborted after stall retries; remaining tracks: ${remaining.joinToString(",")}")
         remaining.forEach { failedTracks.add(it) }
         pendingRequested.clear()
         isDownloading = false
@@ -349,7 +348,7 @@ object ClientTrackManager {
     private fun saveTrackToDisk(trackName: String, data: ByteArray): Boolean {
         val safeName = normalizeInternalName(trackName)
         if (safeName == null) {
-            logger.warn("Refusing to save track with unsafe name: $trackName")
+            dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track with unsafe name: $trackName")
             return false
         }
         try {
@@ -366,17 +365,17 @@ object ClientTrackManager {
                 }
             } else ""
             if (extension.isEmpty() || extension != expectedExtension) {
-                logger.warn("Refusing to save track due to extension/content mismatch: $trackName")
+                dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track due to extension/content mismatch: $trackName")
                 return false
             }
 
             val file = File(folder, safeName)
             if (!isInsideFolder(file, folder)) {
-                logger.error("Path traversal detected for track: $trackName")
+                dev.mcrib884.musync.MuSyncLog.error("Path traversal detected for track: $trackName")
                 return false
             }
             file.writeBytes(data)
-            logger.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
+            dev.mcrib884.musync.MuSyncLog.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
 
             if (cacheEnabled) {
                 try {
@@ -385,15 +384,15 @@ object ClientTrackManager {
                     val cacheFile = File(cf, safeName)
                     if (isInsideFolder(cacheFile, cf)) {
                         cacheFile.writeBytes(data)
-                        logger.info("Saved custom track to cache: ${cacheFile.name} (${data.size} bytes)")
+                        dev.mcrib884.musync.MuSyncLog.info("Saved custom track to cache: ${cacheFile.name} (${data.size} bytes)")
                     }
                 } catch (e2: Exception) {
-                    logger.error("Failed to cache track $trackName: ${e2.message}")
+                    dev.mcrib884.musync.MuSyncLog.error("Failed to cache track $trackName: ${e2.message}")
                 }
             }
             return true
         } catch (e: Exception) {
-            logger.error("Failed to save track $trackName: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Failed to save track $trackName: ${e.message}")
             return false
         }
     }
@@ -424,9 +423,9 @@ object ClientTrackManager {
                 try {
                     val bytes = file.readBytes()
                     CustomTrackCache.put(internalName, bytes)
-                    logger.info("Cached local track: $internalName (${bytes.size} bytes)")
+                    dev.mcrib884.musync.MuSyncLog.info("Cached local track: $internalName (${bytes.size} bytes)")
                 } catch (e: Exception) {
-                    logger.error("Failed to cache local track $internalName: ${e.message}")
+                    dev.mcrib884.musync.MuSyncLog.error("Failed to cache local track $internalName: ${e.message}")
                 }
             }
         }

@@ -87,14 +87,23 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         PacketHandler.sendToServer(
             MusicControlPacket(MusicControlPacket.Action.CLEAR_QUEUE, null, null)
         )
-        for (track in tracks) {
+        val status = ClientMusicPlayer.getCurrentStatus()
+        val shouldStartImmediately = status?.isPlaying == true &&
+            status.currentTrack != null &&
+            status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST
+        if (shouldStartImmediately) {
+            PacketHandler.sendToServer(
+                MusicControlPacket(MusicControlPacket.Action.PLAY_TRACK, tracks.first(), null)
+            )
+        } else {
+            PacketHandler.sendToServer(
+                MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, tracks.first(), null)
+            )
+        }
+        for (track in tracks.drop(1)) {
             PacketHandler.sendToServer(
                 MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, track, null)
             )
-        }
-        val status = ClientMusicPlayer.getCurrentStatus()
-        if (status?.isPlaying == true && status.currentTrack != null && status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST) {
-            PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null))
         }
     }
 
@@ -677,7 +686,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         graphics.fill(x, y, x + 1, y + h, borderColor)
         graphics.fill(x + w - 1, y, x + w, y + h, borderColor)
         graphics.fill(x, y + h - 1, x + w, y + h, borderColor)
-        graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
+        graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - font.lineHeight) / 2, textColor)
     }
     //?} else {
     /*private fun drawCustomBtn1919(poseStack: PoseStack, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean = true) {
@@ -689,7 +698,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         GuiComponent.fill(poseStack, x, y, x + 1, y + h, borderColor)
         GuiComponent.fill(poseStack, x + w - 1, y, x + w, y + h, borderColor)
         GuiComponent.fill(poseStack, x, y + h - 1, x + w, y + h, borderColor)
-        GuiComponent.drawString(poseStack, font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
+        GuiComponent.drawString(poseStack, font, label, x + (w - font.width(label)) / 2, y + (h - font.lineHeight) / 2, textColor)
     }*/
     //?}
 

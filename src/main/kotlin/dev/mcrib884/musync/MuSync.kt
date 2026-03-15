@@ -10,8 +10,8 @@ internal inline fun net.minecraft.world.entity.Entity.entityLevel(): net.minecra
 internal inline fun net.minecraft.world.entity.Entity.entityLevel(): net.minecraft.world.level.Level = this.level*/
 //?}
 
-private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
 
 internal fun initializeMod() {
-	logger.info("MuSync has been initialized.")
+	MuSyncConfig.initialize()
+	MuSyncLog.info("MuSync has been initialized.")
 }

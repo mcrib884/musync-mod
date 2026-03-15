@@ -4,8 +4,7 @@ import java.io.File
 
 object CustomTrackManager {
 
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val SAFE_BASE = Regex("^[a-z0-9_\\-]+$")
+        private val SAFE_BASE = Regex("^[a-z0-9_\\-]+$")
     private val SAFE_INTERNAL = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
 
     private data class TrackInfo(val file: File, val size: Long)
@@ -23,7 +22,7 @@ object CustomTrackManager {
         val folder = File(serverDir, "customtracks")
         if (!folder.exists()) {
             folder.mkdirs()
-            logger.info("Created customtracks/ folder at ${folder.absolutePath}")
+            dev.mcrib884.musync.MuSyncLog.info("Created customtracks/ folder at ${folder.absolutePath}")
             tracks = emptyMap()
             baseAliases = emptyMap()
             return
@@ -40,25 +39,24 @@ object CustomTrackManager {
 
         for (file in audioFiles) {
             if (file.length() > MAX_TRACK_SIZE) {
-                logger.warn("Skipping oversized custom track: ${file.name} (${file.length()} bytes, max=${MAX_TRACK_SIZE})")
+                dev.mcrib884.musync.MuSyncLog.warn("Skipping oversized custom track: ${file.name} (${file.length()} bytes, max=${MAX_TRACK_SIZE})")
                 continue
             }
             val baseName = file.nameWithoutExtension.lowercase().replace(" ", "_")
             if (!SAFE_BASE.matches(baseName)) {
-                logger.warn("Skipping unsafe custom track name: ${file.name}")
+                dev.mcrib884.musync.MuSyncLog.warn("Skipping unsafe custom track name: ${file.name}")
                 continue
             }
             val extension = file.extension.lowercase()
             val internalName = "$baseName.$extension"
             nextTracks[internalName] = TrackInfo(file, file.length())
-            // Keep stable preference by first seen extension/name ordering.
             nextAliases.putIfAbsent(baseName, internalName)
-            logger.info("Indexed custom track: $internalName (${file.length()} bytes)")
+            dev.mcrib884.musync.MuSyncLog.info("Indexed custom track: $internalName (${file.length()} bytes)")
         }
 
         tracks = nextTracks
         baseAliases = nextAliases
-        logger.info("Indexed ${tracks.size} custom tracks from ${folder.absolutePath}")
+        dev.mcrib884.musync.MuSyncLog.info("Indexed ${tracks.size} custom tracks from ${folder.absolutePath}")
     }
 
     private fun normalizeKey(name: String): String {

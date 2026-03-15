@@ -20,76 +20,86 @@ object MuSyncCommand {
 
     private val TRACK_MAP = mapOf(
 
-        "minecraft" to "minecraft:music.game|music/game/calm1",
-        "clark" to "minecraft:music.game|music/game/calm2",
-        "sweden" to "minecraft:music.game|music/game/calm3",
-        "subwoofer_lullaby" to "minecraft:music.game|music/game/hal1",
-        "living_mice" to "minecraft:music.game|music/game/hal2",
-        "haggstrom" to "minecraft:music.game|music/game/hal3",
-        "danny" to "minecraft:music.game|music/game/hal4",
-        "key" to "minecraft:music.game|music/game/nuance1",
-        "oxygene" to "minecraft:music.game|music/game/nuance2",
-        "dry_hands" to "minecraft:music.game|music/game/piano1",
-        "wet_hands" to "minecraft:music.game|music/game/piano2",
-        "mice_on_venus" to "minecraft:music.game|music/game/piano3",
+        "minecraft" to "minecraft:music.game",
+        "clark" to "minecraft:music.game",
+        "sweden" to "minecraft:music.game",
+        "subwoofer_lullaby" to "minecraft:music.game",
+        "living_mice" to "minecraft:music.game",
+        "haggstrom" to "minecraft:music.game",
+        "danny" to "minecraft:music.game",
+        "key" to "minecraft:music.game",
+        "oxygene" to "minecraft:music.game",
+        "dry_hands" to "minecraft:music.game",
+        "wet_hands" to "minecraft:music.game",
+        "mice_on_venus" to "minecraft:music.game",
 
-        "biome_fest" to "minecraft:music.creative|music/game/creative/creative1",
-        "blind_spots" to "minecraft:music.creative|music/game/creative/creative2",
-        "haunt_muskie" to "minecraft:music.creative|music/game/creative/creative3",
-        "aria_math" to "minecraft:music.creative|music/game/creative/creative4",
-        "dreiton" to "minecraft:music.creative|music/game/creative/creative5",
-        "taswell" to "minecraft:music.creative|music/game/creative/creative6",
+        "biome_fest" to "minecraft:music.creative",
+        "blind_spots" to "minecraft:music.creative",
+        "haunt_muskie" to "minecraft:music.creative",
+        "aria_math" to "minecraft:music.creative",
+        "dreiton" to "minecraft:music.creative",
+        "taswell" to "minecraft:music.creative",
 
-        "mutation" to "minecraft:music.menu|music/menu/menu1",
-        "moog_city_2" to "minecraft:music.menu|music/menu/menu2",
-        "beginning_2" to "minecraft:music.menu|music/menu/menu3",
-        "floating_trees" to "minecraft:music.menu|music/menu/menu4",
+        "mutation" to "minecraft:music.menu",
+        "moog_city_2" to "minecraft:music.menu",
+        "beginning_2" to "minecraft:music.menu",
+        "floating_trees" to "minecraft:music.menu",
 
-        "rubedo" to "minecraft:music.nether.nether_wastes|music/game/nether/rubedo",
-        "chrysopoeia" to "minecraft:music.nether.crimson_forest|music/game/nether/chrysopoeia",
-        "so_below" to "minecraft:music.nether.soul_sand_valley|music/game/nether/so_below",
+        "rubedo" to "minecraft:music.nether.warped_forest",
+        "chrysopoeia" to "minecraft:music.nether.crimson_forest",
+        "so_below" to "minecraft:music.nether.soul_sand_valley",
 
-        "concrete_halls" to "minecraft:music.nether.nether_wastes|music/game/nether/concrete_halls",
-        "dead_voxel" to "minecraft:music.nether.nether_wastes|music/game/nether/dead_voxel",
-        "warmth" to "minecraft:music.nether.nether_wastes|music/game/nether/warmth",
-        "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes|music/game/nether/ballad_of_the_cats",
+        "concrete_halls" to "minecraft:music.nether.nether_wastes",
+        "dead_voxel" to "minecraft:music.nether.nether_wastes",
+        "warmth" to "minecraft:music.nether.nether_wastes",
+        "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes",
 
-        "the_end" to "minecraft:music.end|music/game/end/the_end",
-        "boss" to "minecraft:music.dragon|music/game/end/boss",
-        "alpha" to "minecraft:music.credits|music/game/end/credits",
+        "the_end" to "minecraft:music.end",
+        "boss" to "minecraft:music.dragon",
+        "alpha" to "minecraft:music.credits",
 
-        "stand_tall" to "minecraft:music.game|music/game/stand_tall",
-        "left_to_bloom" to "minecraft:music.game|music/game/left_to_bloom",
-        "one_more_day" to "minecraft:music.game|music/game/one_more_day",
-        "infinite_amethyst" to "minecraft:music.game|music/game/infinite_amethyst",
-        "wending" to "minecraft:music.game|music/game/wending",
-        "ancestry" to "minecraft:music.game|music/game/ancestry",
+        "stand_tall" to "minecraft:music.game",
+        "left_to_bloom" to "minecraft:music.game",
+        "one_more_day" to "minecraft:music.game",
+        "infinite_amethyst" to "minecraft:music.game",
+        "wending" to "minecraft:music.game",
+        "ancestry" to "minecraft:music.game",
 
-        "comforting_memories" to "minecraft:music.game|music/game/comforting_memories",
-        "floating_dream" to "minecraft:music.game|music/game/floating_dream",
+        "comforting_memories" to "minecraft:music.game",
+        "floating_dream" to "minecraft:music.game",
 
-        "an_ordinary_day" to "minecraft:music.game|music/game/an_ordinary_day",
-        "echo_in_the_wind" to "minecraft:music.game|music/game/echo_in_the_wind",
+        "an_ordinary_day" to "minecraft:music.game",
+        "echo_in_the_wind" to "minecraft:music.game",
 
-        "a_familiar_room" to "minecraft:music.game|music/game/a_familiar_room",
-        "bromeliad" to "minecraft:music.game|music/game/bromeliad",
-        "crescent_dunes" to "minecraft:music.game|music/game/crescent_dunes",
-        "firebugs" to "minecraft:music.game|music/game/firebugs",
-        "labyrinthine" to "minecraft:music.game|music/game/labyrinthine",
-        "eld_unknown" to "minecraft:music.game|music/game/eld_unknown",
+        "a_familiar_room" to "minecraft:music.game",
+        "bromeliad" to "minecraft:music.game",
+        "crescent_dunes" to "minecraft:music.game",
+        "firebugs" to "minecraft:music.game",
+        "labyrinthine" to "minecraft:music.game",
+        "eld_unknown" to "minecraft:music.game",
 
-        "deeper" to "minecraft:music.overworld.deep_dark|music/game/deeper",
-        "featherfall" to "minecraft:music.overworld.deep_dark|music/game/featherfall",
+        "deeper" to "minecraft:music.overworld.deep_dark",
+        "featherfall" to "minecraft:music.overworld.deep_dark",
 
-        "axolotl" to "minecraft:music.under_water|music/game/water/axolotl",
-        "dragon_fish" to "minecraft:music.under_water|music/game/water/dragon_fish",
-        "shuniji" to "minecraft:music.under_water|music/game/water/shuniji",
+        "axolotl" to "minecraft:music.under_water",
+        "dragon_fish" to "minecraft:music.under_water",
+        "shuniji" to "minecraft:music.under_water",
     )
 
     private val DISPLAY_NAMES = dev.mcrib884.musync.TrackNames.DISPLAY_NAMES
 
+    private fun isAliasAvailable(aliasKey: String): Boolean {
+        val eventId = TRACK_MAP[aliasKey]?.substringBefore("|") ?: return false
+        val resource = ResourceLocation.tryParse(eventId) ?: return false
+        return soundEventContains(resource)
+    }
+
+    private fun availableAliasKeys(): Set<String> {
+        return TRACK_MAP.keys.filterTo(mutableSetOf()) { isAliasAvailable(it) }
+    }
+
     private val TRACK_SUGGESTIONS = SuggestionProvider<CommandSourceStack> { _, builder ->
-        val allTracks = TRACK_MAP.keys.toMutableSet()
+        val allTracks = availableAliasKeys().toMutableSet()
 
         dev.mcrib884.musync.server.MusicManager.getCustomTracks().forEach { allTracks.add(it) }
 
@@ -140,23 +150,13 @@ object MuSyncCommand {
                                         return@executes 1
                                     }
 
-                                    val trackValue = TRACK_MAP[input]
+                                    val trackValue = resolveTrackValue(input)
                                     if (trackValue != null) {
-
-                                        if (trackValue.contains("|")) {
-                                            val parts = trackValue.split("|", limit = 2)
-                                            dev.mcrib884.musync.server.MusicManager.playTrack(parts[0], parts[1])
-                                            ctx.source.sendSuccessCompat(
-                                                { Component.literal("Now playing: ${formatOggName(parts[1])}") },
-                                                true
-                                            )
-                                        } else {
-                                            dev.mcrib884.musync.server.MusicManager.playTrack(trackValue)
-                                            ctx.source.sendSuccessCompat(
-                                                { Component.literal("Now playing: ${formatTrackName(trackValue)}") },
-                                                true
-                                            )
-                                        }
+                                        dev.mcrib884.musync.server.MusicManager.playTrack(trackValue)
+                                        ctx.source.sendSuccessCompat(
+                                            { Component.literal("Now playing: ${formatAliasName(input)}") },
+                                            true
+                                        )
                                         return@executes 1
                                     }
 
@@ -243,22 +243,13 @@ object MuSyncCommand {
                                         return@executes 1
                                     }
 
-                                    val trackValue = TRACK_MAP[input]
+                                    val trackValue = resolveTrackValue(input)
                                     if (trackValue != null) {
-                                        if (trackValue.contains("|")) {
-                                            val parts = trackValue.split("|", limit = 2)
-                                            dev.mcrib884.musync.server.MusicManager.addToQueue(trackValue)
-                                            ctx.source.sendSuccessCompat(
-                                                { Component.literal("Added to queue: ${formatOggName(parts[1])}") },
-                                                true
-                                            )
-                                        } else {
-                                            dev.mcrib884.musync.server.MusicManager.addToQueue(trackValue)
-                                            ctx.source.sendSuccessCompat(
-                                                { Component.literal("Added to queue: ${formatTrackName(trackValue)}") },
-                                                true
-                                            )
-                                        }
+                                        dev.mcrib884.musync.server.MusicManager.addToQueue(trackValue)
+                                        ctx.source.sendSuccessCompat(
+                                            { Component.literal("Added to queue: ${formatAliasName(input)}") },
+                                            true
+                                        )
                                         return@executes 1
                                     }
 
@@ -491,6 +482,12 @@ object MuSyncCommand {
         return dev.mcrib884.musync.TrackNames.formatDisplayName(trackId)
     }
 
+    private fun formatAliasName(alias: String): String {
+        return alias.replace("_", " ").split(" ").joinToString(" ") { part ->
+            if (part.isEmpty()) part else part.replaceFirstChar { it.uppercase() }
+        }
+    }
+
     private fun createProgressBar(current: Long, total: Long, length: Int): String {
         if (total <= 0) return " ".repeat(length)
         val progress = (current.toDouble() / total.toDouble()).coerceIn(0.0, 1.0)
@@ -513,26 +510,26 @@ object MuSyncCommand {
         return String.format("%d:%02d", minutes, seconds)
     }
 
-    fun getAllTrackIds(): List<String> = TRACK_MAP.values.toList()
+    fun getAllTrackIds(): List<String> = TRACK_MAP.entries
+        .filter { isAliasAvailable(it.key) }
+        .map { it.value }
+        .distinct()
 
-    fun getAllTrackNames(): List<String> = TRACK_MAP.keys.toList()
+    fun getAllTrackNames(): List<String> = availableAliasKeys().toList().sorted()
 
     fun getAllTracksForBrowser(): List<Pair<String, String>> {
         val entries = linkedMapOf<String, String>()
 
-        val knownSpecificSounds = mutableSetOf<String>()
+        val availableAliases = availableAliasKeys()
+
         val aliasedSoundEvents = mutableSetOf<String>()
-        for (value in TRACK_MAP.values) {
+        for (value in TRACK_MAP.filterKeys { it in availableAliases }.values) {
             val parts = value.split("|", limit = 2)
             aliasedSoundEvents.add(parts[0])
-            if (value.contains("|")) {
-                val oggPath = parts[1]
-                knownSpecificSounds.add("minecraft:$oggPath")
-            }
         }
 
-        for (key in TRACK_MAP.keys) {
-            val displayName = dev.mcrib884.musync.TrackNames.formatTrack(TRACK_MAP.getValue(key))
+        for (key in availableAliases) {
+            val displayName = formatAliasName(key)
             entries.putIfAbsent(key, displayName)
         }
 
@@ -549,38 +546,6 @@ object MuSyncCommand {
             }
         }
 
-        try {
-            val mc = net.minecraft.client.Minecraft.getInstance()
-            val soundManager = mc.soundManager
-            soundEventKeys().forEach { loc ->
-                if (!loc.path.contains("music") && !loc.path.startsWith("music_disc.")) return@forEach
-                val fullEventId = loc.toString()
-                if (fullEventId in aliasedSoundEvents) return@forEach
-                if (fullEventId.contains("music_disc")) return@forEach
-                val poolName = DISPLAY_NAMES[fullEventId] ?: formatDiscoveredTrackName(fullEventId)
-
-                try {
-                    val events = soundManager.getSoundEvent(loc) ?: return@forEach
-                    val soundList = events.list
-                    for (weighted in soundList) {
-                        val sound = weighted.getSound(net.minecraft.util.RandomSource.create())
-                        if (sound.type != net.minecraft.client.resources.sounds.Sound.Type.FILE) continue
-                        val soundLoc = sound.location
-                        val qualifiedPath = "${soundLoc.namespace}:${soundLoc.path}"
-
-                        if (qualifiedPath in knownSpecificSounds) continue
-
-                        val key = "$fullEventId|$qualifiedPath"
-                        val friendlyOgg = dev.mcrib884.musync.TrackNames.formatOggName(qualifiedPath)
-                        val prefix = if (soundLoc.namespace != "minecraft") "[${soundLoc.namespace}] " else ""
-                        val displayName = "$prefix$friendlyOgg ($poolName)"
-                        entries.putIfAbsent(key, displayName)
-                        knownSpecificSounds.add(qualifiedPath)
-                    }
-                } catch (_: Exception) { }
-            }
-        } catch (_: Exception) { }
-
         dev.mcrib884.musync.client.ClientTrackManager.getServerCustomTrackNames().forEach { name ->
             if (!TRACK_MAP.containsKey(name)) {
                 val displayName = "[Custom] " + name.replace("_", " ").replaceFirstChar { it.uppercase() }
@@ -591,7 +556,7 @@ object MuSyncCommand {
         fun entryEventId(key: String): String {
             if (key.startsWith("custom:")) return "custom"
             val direct = TRACK_MAP[key] ?: key
-            return if (direct.contains("|")) direct.substringBefore("|") else direct
+            return direct.substringBefore("|")
         }
 
         fun categoryRank(key: String): Int {
@@ -622,6 +587,10 @@ object MuSyncCommand {
 
     fun toBrowserTrackKey(trackId: String): String {
         if (trackId.startsWith("custom:")) return trackId.removePrefix("custom:")
+
+        if (trackId.contains("|alias:")) {
+            return trackId.substringAfter("|alias:")
+        }
 
         val known = TRACK_MAP.entries.firstOrNull { it.value == trackId }
         if (known != null) return known.key
@@ -658,8 +627,9 @@ object MuSyncCommand {
             return "custom:$key"
         }
         val value = TRACK_MAP[key] ?: return null
-
-        return if (value.contains("|")) value.split("|", limit = 2)[0] else value
+        val eventId = value.substringBefore("|")
+        val resource = ResourceLocation.tryParse(eventId) ?: return null
+        return if (soundEventContains(resource)) eventId else null
     }
 
     fun resolveTrackValue(friendlyName: String): String? {
@@ -667,14 +637,20 @@ object MuSyncCommand {
         if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(key)) {
             return "custom:$key"
         }
-        TRACK_MAP[key]?.let { return it }
+        TRACK_MAP[key]?.let {
+            val eventId = it.substringBefore("|")
+            val resource = ResourceLocation.tryParse(eventId) ?: return null
+            if (!soundEventContains(resource)) return null
+            if (eventId.startsWith("minecraft:music")) {
+                return "$eventId|alias:$key"
+            }
+            return eventId
+        }
         val resourceLocation = ResourceLocation.tryParse(key) ?: return null
         return if (soundEventContains(resourceLocation)) resourceLocation.toString() else null
     }
 
     fun getSpecificSound(friendlyName: String): String {
-        val key = friendlyName.lowercase().replace(" ", "_")
-        val value = TRACK_MAP[key] ?: return ""
-        return if (value.contains("|")) value.split("|", limit = 2)[1] else ""
+        return ""
     }
 }

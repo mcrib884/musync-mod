@@ -142,6 +142,12 @@ object TrackNames {
     fun formatTrack(id: String): String {
         if (id.contains("|")) {
             val oggPath = id.split("|", limit = 2)[1]
+            if (oggPath.startsWith("alias:")) {
+                return oggPath.removePrefix("alias:")
+                    .replace("_", " ")
+                    .split(" ")
+                    .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+            }
             return formatOggName(oggPath)
         }
         if (id.startsWith("custom:")) {
