@@ -45,14 +45,14 @@ object MuSyncCommand {
         "beginning_2" to "minecraft:music.menu|music/menu/menu3",
         "floating_trees" to "minecraft:music.menu|music/menu/menu4",
 
-        "rubedo" to "minecraft:music.nether.nether_wastes|music/game/nether/rubedo",
-        "chrysopoeia" to "minecraft:music.nether.crimson_forest|music/game/nether/chrysopoeia",
-        "so_below" to "minecraft:music.nether.soul_sand_valley|music/game/nether/so_below",
+        "rubedo" to "minecraft:music.nether.warped_forest",
+        "chrysopoeia" to "minecraft:music.nether.crimson_forest",
+        "so_below" to "minecraft:music.nether.soul_sand_valley",
 
-        "concrete_halls" to "minecraft:music.nether.nether_wastes|music/game/nether/concrete_halls",
-        "dead_voxel" to "minecraft:music.nether.nether_wastes|music/game/nether/dead_voxel",
-        "warmth" to "minecraft:music.nether.nether_wastes|music/game/nether/warmth",
-        "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes|music/game/nether/ballad_of_the_cats",
+        "concrete_halls" to "minecraft:music.nether.nether_wastes",
+        "dead_voxel" to "minecraft:music.nether.nether_wastes",
+        "warmth" to "minecraft:music.nether.nether_wastes",
+        "ballad_of_the_cats" to "minecraft:music.nether.nether_wastes",
 
         "the_end" to "minecraft:music.end|music/game/end/the_end",
         "boss" to "minecraft:music.dragon|music/game/end/boss",

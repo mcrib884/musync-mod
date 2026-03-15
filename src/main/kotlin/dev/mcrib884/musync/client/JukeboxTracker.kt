@@ -7,8 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 object JukeboxTracker {
 
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-
+    
     const val JUKEBOX_RANGE = 64.0
     private const val JUKEBOX_RANGE_SQ = JUKEBOX_RANGE * JUKEBOX_RANGE
 
@@ -17,14 +16,14 @@ object JukeboxTracker {
     fun onJukeboxStartPlaying(dimension: ResourceKey<Level>, pos: BlockPos) {
         val set = activeJukeboxes.getOrPut(dimension) { ConcurrentHashMap.newKeySet() }
         if (set.add(pos)) {
-            logger.debug("Jukebox started at {} in {}", pos, dimension.location())
+            dev.mcrib884.musync.MuSyncLog.debug("Jukebox started at {} in {}", pos, dimension.location())
         }
     }
 
     fun onJukeboxStopPlaying(dimension: ResourceKey<Level>, pos: BlockPos) {
         val set = activeJukeboxes[dimension] ?: return
         if (set.remove(pos)) {
-            logger.debug("Jukebox stopped at {} in {}", pos, dimension.location())
+            dev.mcrib884.musync.MuSyncLog.debug("Jukebox stopped at {} in {}", pos, dimension.location())
         }
         if (set.isEmpty()) activeJukeboxes.remove(dimension)
     }

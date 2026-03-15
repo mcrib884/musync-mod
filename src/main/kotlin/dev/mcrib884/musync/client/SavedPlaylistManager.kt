@@ -8,8 +8,7 @@ import net.minecraft.client.Minecraft
 import java.io.File
 
 object SavedPlaylistManager {
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val gson = GsonBuilder().setPrettyPrinting().create()
+        private val gson = GsonBuilder().setPrettyPrinting().create()
 
     private fun getFile(): File {
         val configDir = File(Minecraft.getInstance().gameDirectory, "config")
@@ -45,7 +44,7 @@ object SavedPlaylistManager {
                 playlists
             }
         } catch (e: Exception) {
-            logger.error("Failed to read saved playlists: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Failed to read saved playlists: ${e.message}")
             linkedMapOf()
         }
     }
@@ -64,7 +63,7 @@ object SavedPlaylistManager {
         try {
             file.writer().use { writer -> gson.toJson(root, writer) }
         } catch (e: Exception) {
-            logger.error("Failed to write saved playlists: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Failed to write saved playlists: ${e.message}")
         }
     }
 

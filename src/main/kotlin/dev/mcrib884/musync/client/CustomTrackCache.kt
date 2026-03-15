@@ -6,8 +6,7 @@ import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicLong
 
 object CustomTrackCache {
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-
+    
     private const val MAX_CACHE_BYTES = 200L * 1024 * 1024
     private const val MAX_ENTRIES = 50
     private const val MAX_PENDING = 5
@@ -32,12 +31,12 @@ object CustomTrackCache {
         purgeExpiredPending()
 
         if (totalChunks <= 0 || totalChunks > MAX_TOTAL_CHUNKS || chunkIndex < 0 || chunkIndex >= totalChunks) {
-            logger.warn("Invalid chunk metadata for $trackName: chunk=$chunkIndex total=$totalChunks")
+            dev.mcrib884.musync.MuSyncLog.warn("Invalid chunk metadata for $trackName: chunk=$chunkIndex total=$totalChunks")
             return
         }
 
         if (pending.size >= MAX_PENDING && !pending.containsKey(trackName)) {
-            logger.warn("Too many pending track downloads, rejecting $trackName")
+            dev.mcrib884.musync.MuSyncLog.warn("Too many pending track downloads, rejecting $trackName")
             return
         }
 
@@ -45,7 +44,7 @@ object CustomTrackCache {
         val entry = pending.getOrPut(trackName) { PendingTrack(totalChunks, mutableMapOf(), now) }
 
         if (entry.totalChunks != totalChunks) {
-            logger.warn("Chunk count mismatch for $trackName: expected=${entry.totalChunks} got=$totalChunks")
+            dev.mcrib884.musync.MuSyncLog.warn("Chunk count mismatch for $trackName: expected=${entry.totalChunks} got=$totalChunks")
             pending.remove(trackName)
             return
         }
@@ -59,7 +58,7 @@ object CustomTrackCache {
         if (entry.chunks.size == totalChunks) {
             val totalSizeLong = entry.chunks.values.sumOf { it.size.toLong() }
             if (totalSizeLong <= 0L || totalSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES || totalSizeLong > Int.MAX_VALUE.toLong()) {
-                logger.warn("Rejecting assembled track for $trackName due to invalid size: $totalSizeLong")
+                dev.mcrib884.musync.MuSyncLog.warn("Rejecting assembled track for $trackName due to invalid size: $totalSizeLong")
                 pending.remove(trackName)
                 ClientTrackManager.onTrackFailed(trackName, "invalid assembled size")
                 return
@@ -70,7 +69,7 @@ object CustomTrackCache {
             for (i in 0 until totalChunks) {
                 val chunk = entry.chunks[i]
                 if (chunk == null) {
-                    logger.warn("Missing chunk $i/$totalChunks for $trackName during assembly")
+                    dev.mcrib884.musync.MuSyncLog.warn("Missing chunk $i/$totalChunks for $trackName during assembly")
                     pending.remove(trackName)
                     ClientTrackManager.onTrackFailed(trackName, "missing chunk $i")
                     return
@@ -85,9 +84,9 @@ object CustomTrackCache {
             }
             pending.remove(trackName)
             ClientTrackManager.onTrackDownloaded(trackName, totalChunks, assembled)
-            logger.info("Cached custom track: $trackName (${assembled.size} bytes)")
+            dev.mcrib884.musync.MuSyncLog.info("Cached custom track: $trackName (${assembled.size} bytes)")
         } else {
-            logger.debug("Received chunk ${chunkIndex + 1}/$totalChunks for $trackName")
+            dev.mcrib884.musync.MuSyncLog.debug("Received chunk ${chunkIndex + 1}/$totalChunks for $trackName")
         }
     }
 
@@ -97,7 +96,7 @@ object CustomTrackCache {
         while (iterator.hasNext()) {
             val entry = iterator.next()
             if (entry.value.lastUpdateMs < expireBefore) {
-                logger.warn("Expiring incomplete track download: ${entry.key}")
+                dev.mcrib884.musync.MuSyncLog.warn("Expiring incomplete track download: ${entry.key}")
                 iterator.remove()
             }
         }
@@ -118,7 +117,7 @@ object CustomTrackCache {
             val removed = cache.remove(evict)
             if (removed != null) {
                 totalCachedBytes.addAndGet(-removed.size.toLong())
-                logger.debug("Evicted cached track: $evict (${removed.size} bytes)")
+                dev.mcrib884.musync.MuSyncLog.debug("Evicted cached track: $evict (${removed.size} bytes)")
             }
         }
     }

@@ -11,8 +11,7 @@ import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 
 object CustomTrackPlayer {
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val activeStreams = ConcurrentHashMap<Int, StreamThread>()
+        private val activeStreams = ConcurrentHashMap<Int, StreamThread>()
 
     interface AudioStream : AutoCloseable {
         val format: Int
@@ -174,13 +173,13 @@ object CustomTrackPlayer {
             val fileLoc = dev.mcrib884.musync.resLoc(namespace, "sounds/$soundPath.ogg")
             val resource = Minecraft.getInstance().resourceManager.getResource(fileLoc).orElse(null)
             if (resource == null) {
-                logger.warn("Could not find resource: $fileLoc")
+                dev.mcrib884.musync.MuSyncLog.warn("Could not find resource: $fileLoc")
                 return null
             }
             val oggBytes = resource.open().use { it.readBytes() }
             prepareStream(oggBytes)
         } catch (e: Exception) {
-            logger.error("Error loading resource audio: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Error loading resource audio: ${e.message}")
             null
         }
     }
@@ -193,12 +192,12 @@ object CustomTrackPlayer {
                 magic == "RIFF" -> WavStream(audioData)
                 magic == "OggS" -> OggStream(audioData)
                 else -> {
-                    logger.warn("Unknown audio format (magic: $magic)")
+                    dev.mcrib884.musync.MuSyncLog.warn("Unknown audio format (magic: $magic)")
                     null
                 }
             }
         } catch (e: Exception) {
-            logger.error("Error preparing audio stream: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Error preparing audio stream: ${e.message}")
             null
         }
     }
@@ -308,7 +307,7 @@ object CustomTrackPlayer {
                 }
 
             } catch (e: Exception) {
-                logger.error("Streaming error on source $source: ${e.message}")
+                dev.mcrib884.musync.MuSyncLog.error("Streaming error on source $source: ${e.message}")
             } finally {
                 try {
                     AL10.alSourceStop(source)
@@ -336,7 +335,7 @@ object CustomTrackPlayer {
             thread.start()
             source
         } catch (e: Exception) {
-            logger.error("Error starting stream: ${e.message}")
+            dev.mcrib884.musync.MuSyncLog.error("Error starting stream: ${e.message}")
             -1
         }
     }
@@ -371,7 +370,7 @@ object CustomTrackPlayer {
                 AL10.alDeleteSources(source)
                 if (buffer != 0) AL10.alDeleteBuffers(buffer)
             } catch (e: Exception) {
-                logger.error("Error stopping custom track: ${e.message}")
+                dev.mcrib884.musync.MuSyncLog.error("Error stopping custom track: ${e.message}")
             }
         }
     }

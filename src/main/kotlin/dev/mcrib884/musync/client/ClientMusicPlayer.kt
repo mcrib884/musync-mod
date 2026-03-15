@@ -12,8 +12,7 @@ import org.lwjgl.openal.AL11
 import java.util.concurrent.Executors
 
 object ClientMusicPlayer {
-    private val logger = org.apache.logging.log4j.LogManager.getLogger("MuSync")
-    private val loadExecutor = Executors.newSingleThreadExecutor { task ->
+        private val loadExecutor = Executors.newSingleThreadExecutor { task ->
         Thread(task, "MuSync-TrackLoader").apply { isDaemon = true }
     }
     private var lastResolvedSound: String? = null
@@ -170,7 +169,7 @@ object ClientMusicPlayer {
                 val fileName = trackId.removePrefix("custom:")
                 val trackData = CustomTrackCache.get(fileName)
                 if (trackData == null) {
-                    logger.warn("Custom track data not cached: $fileName")
+                    dev.mcrib884.musync.MuSyncLog.warn("Custom track data not cached: $fileName")
                     PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
                 } else {
                     PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, CustomTrackPlayer.prepareStream(trackData))
@@ -187,7 +186,7 @@ object ClientMusicPlayer {
                 }
 
                 if (resolved == null) {
-                    logger.warn("Failed to resolve sound path for $trackId")
+                    dev.mcrib884.musync.MuSyncLog.warn("Failed to resolve sound path for $trackId")
                     PreparedLoad(trackId, startPositionMs, specific, startPaused, "", null)
                 } else {
                     val resolvedName = "${resolved.first}:${resolved.second}"
@@ -211,7 +210,7 @@ object ClientMusicPlayer {
 
                 val preparedAudio = prepared.preparedAudio
                 if (preparedAudio == null) {
-                    logger.error("Failed to load track asynchronously: ${prepared.trackId}")
+                    dev.mcrib884.musync.MuSyncLog.error("Failed to load track asynchronously: ${prepared.trackId}")
                     val failedTrack = currentTrack
                     isPlaying = false
                     isPaused = false
@@ -241,7 +240,7 @@ object ClientMusicPlayer {
                     startPaused = prepared.startPaused
                 )
                 if (source == -1) {
-                    logger.error("Failed to start prepared track: ${prepared.resolvedName}")
+                    dev.mcrib884.musync.MuSyncLog.error("Failed to start prepared track: ${prepared.resolvedName}")
                     val failedTrack = currentTrack
                     isPlaying = false
                     isPaused = false
@@ -270,7 +269,7 @@ object ClientMusicPlayer {
                     pausedPosition = prepared.startPositionMs
                 }
 
-                logger.info(
+                dev.mcrib884.musync.MuSyncLog.info(
                     "Playing: ${prepared.resolvedName}" +
                         if (prepared.startPositionMs > 0) " (from ${prepared.startPositionMs}ms)" else ""
                 )
@@ -302,19 +301,19 @@ object ClientMusicPlayer {
             ResourceLocation.tryParse("minecraft:$trackId")
         }
         if (soundLocation == null) {
-            logger.warn("Invalid track ID: $trackId")
+            dev.mcrib884.musync.MuSyncLog.warn("Invalid track ID: $trackId")
             return null
         }
 
         val weighedEvents = mc.soundManager.getSoundEvent(soundLocation)
         if (weighedEvents == null) {
-            logger.warn("Unknown sound event: $trackId")
+            dev.mcrib884.musync.MuSyncLog.warn("Unknown sound event: $trackId")
             return null
         }
 
         val soundEvent = dev.mcrib884.musync.createSoundEvent(soundLocation)
 
-        val poolSize = weighedEvents?.list?.size ?: 1
+        val poolSize = weighedEvents.list.size
         val attempts = if (poolSize > 1) minOf(poolSize * 2, 10) else 1
 
         var bestResolved: Pair<String, String>? = null
@@ -328,7 +327,7 @@ object ClientMusicPlayer {
                 val key = "${resolved.first}:${resolved.second}"
                 if (key != lastResolvedSound) {
                     if (poolSize > 1) {
-                        logger.debug("Pool '$trackId' ($poolSize sounds): resolved to $key (avoided last: $lastResolvedSound)")
+                        dev.mcrib884.musync.MuSyncLog.debug("Pool '$trackId' ($poolSize sounds): resolved to $key (avoided last: $lastResolvedSound)")
                     }
                     lastResolvedSound = key
                     return resolved
@@ -340,7 +339,7 @@ object ClientMusicPlayer {
             lastResolvedSound = "${it.first}:${it.second}"
         }
         if (bestResolved == null) {
-            logger.warn("Could not resolve sound for: $trackId")
+            dev.mcrib884.musync.MuSyncLog.warn("Could not resolve sound for: $trackId")
         }
         return bestResolved
     }
@@ -365,7 +364,7 @@ object ClientMusicPlayer {
         isPaused = false
         pausedPosition = 0
         clearLoadingState(cancelCurrentLoad = false, clearPending = true)
-        logger.info("Music stopped")
+        dev.mcrib884.musync.MuSyncLog.info("Music stopped")
     }
 
     private fun pauseMusic() {
@@ -375,7 +374,7 @@ object ClientMusicPlayer {
             if (customTrackSource != -1) {
                 AL10.alSourcePause(customTrackSource)
             }
-            logger.info("Music paused at ${pausedPosition}ms")
+            dev.mcrib884.musync.MuSyncLog.info("Music paused at ${pausedPosition}ms")
         }
     }
 
@@ -394,7 +393,7 @@ object ClientMusicPlayer {
             }
         }
 
-        logger.info("Music synced paused at ${pausedPosition}ms")
+        dev.mcrib884.musync.MuSyncLog.info("Music synced paused at ${pausedPosition}ms")
     }
 
     private fun resumeMusic() {
@@ -404,7 +403,7 @@ object ClientMusicPlayer {
             if (customTrackSource != -1) {
                 AL10.alSourcePlay(customTrackSource)
             }
-            logger.info("Music resumed from ${pausedPosition}ms")
+            dev.mcrib884.musync.MuSyncLog.info("Music resumed from ${pausedPosition}ms")
         }
     }
 
@@ -417,7 +416,7 @@ object ClientMusicPlayer {
         }
 
         startAsyncLoad(trackId, positionMs, specificSound, startPaused = false)
-        logger.info("Music synced resumed from ${positionMs}ms")
+        dev.mcrib884.musync.MuSyncLog.info("Music synced resumed from ${positionMs}ms")
     }
 
     private fun seekInPlace(trackId: String, positionMs: Long) {
@@ -430,7 +429,7 @@ object ClientMusicPlayer {
             pausedPosition = positionMs
         }
         CustomTrackPlayer.seek(customTrackSource, positionMs)
-        logger.info("Seeked in place to ${positionMs}ms")
+        dev.mcrib884.musync.MuSyncLog.info("Seeked in place to ${positionMs}ms")
     }
 
     fun updateStatus(packet: MusicStatusPacket) {
@@ -523,7 +522,7 @@ object ClientMusicPlayer {
         if (customTrackSource != -1) {
             if (!CustomTrackPlayer.isPlaying(customTrackSource)) {
                 val trackId = currentTrack ?: return
-                logger.info("Track finished: $trackId")
+                dev.mcrib884.musync.MuSyncLog.info("Track finished: $trackId")
                 CustomTrackPlayer.stop(customTrackSource)
                 currentTrack = null
                 isPlaying = false

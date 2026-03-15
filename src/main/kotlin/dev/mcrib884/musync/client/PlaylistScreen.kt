@@ -87,14 +87,23 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         PacketHandler.sendToServer(
             MusicControlPacket(MusicControlPacket.Action.CLEAR_QUEUE, null, null)
         )
-        for (track in tracks) {
+        val status = ClientMusicPlayer.getCurrentStatus()
+        val shouldStartImmediately = status?.isPlaying == true &&
+            status.currentTrack != null &&
+            status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST
+        if (shouldStartImmediately) {
+            PacketHandler.sendToServer(
+                MusicControlPacket(MusicControlPacket.Action.PLAY_TRACK, tracks.first(), null)
+            )
+        } else {
+            PacketHandler.sendToServer(
+                MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, tracks.first(), null)
+            )
+        }
+        for (track in tracks.drop(1)) {
             PacketHandler.sendToServer(
                 MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, track, null)
             )
-        }
-        val status = ClientMusicPlayer.getCurrentStatus()
-        if (status?.isPlaying == true && status.currentTrack != null && status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST) {
-            PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null))
         }
     }
 
