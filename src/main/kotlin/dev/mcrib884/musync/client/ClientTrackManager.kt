@@ -7,7 +7,7 @@ import java.io.File
 
 object ClientTrackManager {
 
-        private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
+    private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
     private const val MAX_TRACKS_PER_REQUEST = 3
 
     private fun normalizeInternalName(name: String): String? {
@@ -462,7 +462,7 @@ object ClientTrackManager {
 
     fun getServerCustomTrackNames(): List<String> {
         return serverManifest
-            .map { displayTrackName(it.first) }
+            .mapNotNull { normalizeInternalName(it.first) }
             .distinct()
             .sorted()
     }

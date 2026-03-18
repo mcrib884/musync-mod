@@ -125,8 +125,18 @@ object TrackNames {
         "minecraft:music.overworld.badlands" to "Badlands",
     )
 
+    fun formatCustomTrackName(internalName: String): String {
+        return internalName
+            .substringBeforeLast(".")
+            .replace("_", " ")
+            .replaceFirstChar { it.uppercase() }
+    }
+
     fun formatOggName(oggPath: String): String {
         val cleanPath = if (oggPath.contains(":")) oggPath.substringAfter(":") else oggPath
+        if (!cleanPath.contains("/") && (cleanPath.endsWith(".ogg") || cleanPath.endsWith(".wav"))) {
+            return formatCustomTrackName(cleanPath)
+        }
         return OGG_NAMES[cleanPath]
             ?: cleanPath.substringAfterLast("/").replace("_", " ").replaceFirstChar { it.uppercase() }
     }
@@ -151,8 +161,7 @@ object TrackNames {
             return formatOggName(oggPath)
         }
         if (id.startsWith("custom:")) {
-            return "[Custom] " + id.removePrefix("custom:")
-                .replace("_", " ").replaceFirstChar { it.uppercase() }
+            return "[Custom] " + formatCustomTrackName(id.removePrefix("custom:"))
         }
         val path = if (id.contains(":")) id.substringAfter(":") else id
         if (path.startsWith("music_disc.")) {

@@ -36,12 +36,11 @@ object MusicManager {
 
     private var currentTrackSession: Long = 0L
     private var pendingClientEndSession: Long = -1L
-    private const val TRACK_TIMEOUT_MS = 2 * 60 * 60 * 1000L
     private const val TRACK_TIMEOUT_BUFFER_MS = 15_000L
     private const val MIN_VALID_TRACK_FINISH_MS = 3000L
 
-    private data class OpPlayerState(val musicEvent: String, val lastChanged: Long)
-    private val opPlayerStates = mutableMapOf<java.util.UUID, OpPlayerState>()
+    private data class PlayerMusicState(val musicEvent: String, val lastChanged: Long)
+    private val playerMusicStates = mutableMapOf<java.util.UUID, PlayerMusicState>()
     private var lastDominantMusicEvent: String? = null
     private var lastDragonFightActive: Boolean = false
 
@@ -142,6 +141,16 @@ object MusicManager {
         } catch (_: Exception) { null }
     }
 
+    private fun choosePreferredMusicEvent(primary: String, candidates: Iterable<String>, recent: List<String>): String {
+        if (primary == "minecraft:music.dragon" || primary == "minecraft:music.credits") {
+            return primary
+        }
+        val ordered = linkedSetOf<String>()
+        ordered.add(primary)
+        candidates.forEach { ordered.add(it) }
+        return ordered.firstOrNull { it !in recent } ?: primary
+    }
+
     private fun consumeQueuedTrack(ignoreGuard: Boolean = false): String? {
         val now = System.currentTimeMillis()
         if (!ignoreGuard && now - lastQueueAdvanceAt < QUEUE_ADVANCE_GUARD_MS) {
@@ -154,10 +163,21 @@ object MusicManager {
         return nextTrack
     }
 
+    private fun canonicalCustomTrackId(trackId: String): String? {
+        if (!trackId.startsWith("custom:", ignoreCase = true)) return trackId
+        val rawName = trackId.substringAfter(":", "")
+        val internal = CustomTrackManager.toInternalName(rawName)
+        if (internal == null) {
+            dev.mcrib884.musync.MuSyncLog.warn("Rejected unresolved custom track id: $trackId")
+            return null
+        }
+        return "custom:$internal"
+    }
+
     fun handleControlPacket(packet: MusicControlPacket, player: ServerPlayer) {
         if (player.uuid in playersDownloading) return
 
-        if (packet.action == MusicControlPacket.Action.REQUEST_SYNC && packet.targetDim != null) {
+        if (packet.action == MusicControlPacket.Action.SELECT_DIMENSION && packet.targetDim != null) {
             selectedListenDimensions[player.uuid] = packet.targetDim
             sendSyncToPlayer(player)
             return
@@ -170,7 +190,7 @@ object MusicManager {
 
         if (packet.action == MusicControlPacket.Action.CREDITS_SKIP) {
             if (creditsPlayers.remove(player.uuid) != null) {
-                checkOpPlayerStates()
+                checkPlayerMusicStates()
                 broadcastStatus()
             }
             return
@@ -198,12 +218,14 @@ object MusicManager {
             MusicControlPacket.Action.PLAY_TRACK -> {
                 packet.trackId?.let { friendlyName ->
                     val trackValue = dev.mcrib884.musync.command.MuSyncCommand.resolveTrackValue(friendlyName)
+                    val actual = trackValue
+                        ?: if (friendlyName.startsWith("custom:", ignoreCase = true)) canonicalCustomTrackId(friendlyName) else friendlyName
+                    if (actual == null) return@let
                     if (dimStream != null) {
-                        val actual = trackValue ?: friendlyName
                         dimPlayTrack(dimStream, actual)
                     } else {
                         currentMode = MusicStatusPacket.PlayMode.PLAYLIST
-                        if (trackValue != null) playTrack(trackValue) else playTrack(friendlyName)
+                        playTrack(actual)
                     }
                 }
             }
@@ -222,15 +244,14 @@ object MusicManager {
             MusicControlPacket.Action.PAUSE -> if (dimStream != null) dimPauseMusic(dimStream) else pauseMusic()
             MusicControlPacket.Action.RESUME -> if (dimStream != null) dimResumeMusic(dimStream) else resumeMusic()
             MusicControlPacket.Action.REQUEST_SYNC -> sendSyncToPlayer(player)
+            MusicControlPacket.Action.SELECT_DIMENSION -> {}
             MusicControlPacket.Action.FORCE_SYNC_ALL -> forceSyncAll()
             MusicControlPacket.Action.ADD_TO_QUEUE -> {
                 packet.trackId?.let { friendlyName ->
                     val trackValue = dev.mcrib884.musync.command.MuSyncCommand.resolveTrackValue(friendlyName)
-                    if (trackValue != null) {
-                        addToQueue(trackValue)
-                    } else {
-                        addToQueue(friendlyName)
-                    }
+                    val actual = trackValue
+                        ?: if (friendlyName.startsWith("custom:", ignoreCase = true)) canonicalCustomTrackId(friendlyName) else friendlyName
+                    if (actual != null) addToQueue(actual)
                 }
             }
             MusicControlPacket.Action.REMOVE_FROM_QUEUE -> {
@@ -268,7 +289,7 @@ object MusicManager {
     }
 
     internal fun playTrack(trackId: String, specific: String = "") {
-        val actualTrackId: String
+        var actualTrackId: String
         val actualSpecific: String
         if (specific.isEmpty() && trackId.contains("|")) {
             val parts = trackId.split("|", limit = 2)
@@ -277,6 +298,10 @@ object MusicManager {
         } else {
             actualTrackId = trackId
             actualSpecific = specific
+        }
+
+        if (actualTrackId.startsWith("custom:", ignoreCase = true)) {
+            actualTrackId = canonicalCustomTrackId(actualTrackId) ?: return
         }
 
         currentTrackSession++
@@ -356,7 +381,14 @@ object MusicManager {
     }
 
     internal fun addToQueue(trackId: String) {
-        userPlaylist.add(trackId)
+        val actual = if (trackId.startsWith("custom:", ignoreCase = true)) {
+            canonicalCustomTrackId(trackId)
+        } else {
+            trackId
+        }
+        if (actual == null) return
+
+        userPlaylist.add(actual)
         if (!isPlaying || currentTrack == null) {
             val nextTrack = consumeQueuedTrack(ignoreGuard = true)
             if (nextTrack != null) startPlaylistTrack(nextTrack)
@@ -438,14 +470,14 @@ object MusicManager {
             val expired = creditsPlayers.entries.filter { now - it.value >= CREDITS_DURATION_MS }
             if (expired.isNotEmpty()) {
                 expired.forEach { creditsPlayers.remove(it.key) }
-                checkOpPlayerStates()
+                checkPlayerMusicStates()
             }
         }
 
         opStateCheckCounter++
         if (opStateCheckCounter >= OP_STATE_CHECK_INTERVAL) {
             opStateCheckCounter = 0
-            checkOpPlayerStates()
+            checkPlayerMusicStates()
         }
 
         dimBiomeCheckCounter++
@@ -459,8 +491,7 @@ object MusicManager {
             onTrackFinished(ignoreQueueGuard = true)
         } else if (isPlaying && !isPaused && currentTrack != null) {
             val elapsed = System.currentTimeMillis() - trackStartTime
-            val timeout = if (trackDuration > 0) trackDuration + TRACK_TIMEOUT_BUFFER_MS else TRACK_TIMEOUT_MS
-            if (elapsed > timeout) {
+            if (trackDuration > 0 && elapsed > trackDuration + TRACK_TIMEOUT_BUFFER_MS) {
                 dev.mcrib884.musync.MuSyncLog.warn("Track timed out after ${elapsed / 1000}s (duration=${trackDuration}ms): $currentTrack")
                 onTrackFinished(ignoreQueueGuard = false)
             }
@@ -486,8 +517,7 @@ object MusicManager {
                     dimOnTrackFinished(stream)
                 } else if (stream.playing && !stream.paused && stream.track != null) {
                     val elapsed = System.currentTimeMillis() - stream.startTime
-                    val timeout = if (stream.duration > 0) stream.duration + TRACK_TIMEOUT_BUFFER_MS else TRACK_TIMEOUT_MS
-                    if (elapsed > timeout) {
+                    if (stream.duration > 0 && elapsed > stream.duration + TRACK_TIMEOUT_BUFFER_MS) {
                         dev.mcrib884.musync.MuSyncLog.warn("${stream.dimensionId} track timed out after ${elapsed / 1000}s (duration=${stream.duration}ms): ${stream.track}")
                         dimOnTrackFinished(stream)
                     }
@@ -549,7 +579,7 @@ object MusicManager {
         recentTracks.clear()
         userPlaylist.clear()
 
-        opPlayerStates.clear()
+        playerMusicStates.clear()
         lastDominantMusicEvent = null
         lastDragonFightActive = false
         creditsPlayers.clear()
@@ -599,15 +629,17 @@ object MusicManager {
     private fun getOverworldBiomeTiming(): MusicTiming? {
         val server = currentServer() ?: return null
         val player = server.playerList.players.firstOrNull {
-            isPlayerOp(it) && it.entityLevel().dimension().location().toString() == "minecraft:overworld"
-        } ?: server.playerList.players.firstOrNull {
             it.entityLevel().dimension().location().toString() == "minecraft:overworld"
         } ?: return null
         return getBiomeMusicTiming(player)
     }
 
     private fun playNextAutoTrack() {
-        val musicEvent = determineMusicEventForPlayers()
+        val musicEvent = choosePreferredMusicEvent(
+            determineMusicEventForPlayers(),
+            playerMusicStates.values.map { it.musicEvent },
+            recentTracks
+        )
         if (musicEvent in recentTracks) {
             dev.mcrib884.musync.MuSyncLog.debug("Skipping recently played event, but no alternatives: $musicEvent")
         }
@@ -654,33 +686,35 @@ object MusicManager {
         return getBiomeMusicEvent(player) ?: "minecraft:music.game"
     }
 
-    private fun checkOpPlayerStates() {
+    private fun checkPlayerMusicStates() {
         val server = currentServer() ?: return
         val players = server.playerList.players
         if (players.isEmpty()) return
 
         var anyChanged = false
 
-        val trackedPlayers = players.filter {
-            isPlayerOp(it) && it.entityLevel().dimension().location().toString() == "minecraft:overworld"
+        val overworldPlayers = players.filter {
+            it.entityLevel().dimension().location().toString() == "minecraft:overworld"
         }
+        val nonCreative = overworldPlayers.filter { !it.isCreative }
+        val trackedPlayers = nonCreative.ifEmpty { overworldPlayers }
 
         if (trackedPlayers.isEmpty()) {
-            if (opPlayerStates.isNotEmpty()) {
-                opPlayerStates.clear()
+            if (playerMusicStates.isNotEmpty()) {
+                playerMusicStates.clear()
                 anyChanged = true
             }
         } else {
             for (player in trackedPlayers) {
                 val musicEvent = computeMusicEventForPlayer(player)
-                val prevState = opPlayerStates[player.uuid]
+                val prevState = playerMusicStates[player.uuid]
                 if (prevState == null || prevState.musicEvent != musicEvent) {
-                    opPlayerStates[player.uuid] = OpPlayerState(musicEvent, System.currentTimeMillis())
+                    playerMusicStates[player.uuid] = PlayerMusicState(musicEvent, System.currentTimeMillis())
                     anyChanged = true
                 }
             }
             val activeUuids = trackedPlayers.map { it.uuid }.toSet()
-            val removed = opPlayerStates.keys.removeAll { it !in activeUuids }
+            val removed = playerMusicStates.keys.removeAll { it !in activeUuids }
             if (removed) anyChanged = true
         }
 
@@ -690,7 +724,7 @@ object MusicManager {
             anyChanged = true
         }
 
-        if (anyChanged) onOpStateChanged()
+        if (anyChanged) onPlayerMusicStateChanged()
     }
 
     private fun getMusicCategory(musicEvent: String): String {
@@ -701,7 +735,7 @@ object MusicManager {
         }
     }
 
-    private fun onOpStateChanged() {
+    private fun onPlayerMusicStateChanged() {
         val newMusicEvent = determineDominantMusicEvent()
         if (newMusicEvent != lastDominantMusicEvent) {
             val oldCategory = getMusicCategory(lastDominantMusicEvent ?: "")
@@ -746,7 +780,7 @@ object MusicManager {
     private fun getTimingForEvent(musicEvent: String): MusicTiming {
         val server = currentServer() ?: return MUSIC_TIMING[musicEvent] ?: DEFAULT_TIMING
         for (player in server.playerList.players) {
-            if (!isPlayerOp(player)) continue
+            if (player.entityLevel().dimension().location().toString() != "minecraft:overworld") continue
             val biomeEvent = getBiomeMusicEvent(player)
             if (biomeEvent == musicEvent) {
                 return getBiomeMusicTiming(player) ?: continue
@@ -811,9 +845,9 @@ object MusicManager {
     private fun determineDominantMusicEvent(): String {
         if (isGlobalDragonFight()) return "minecraft:music.dragon"
         if (creditsPlayers.isNotEmpty()) return "minecraft:music.credits"
-        if (opPlayerStates.isEmpty()) return "minecraft:music.game"
+        if (playerMusicStates.isEmpty()) return "minecraft:music.game"
 
-        val states = opPlayerStates.values.toList()
+        val states = playerMusicStates.values.toList()
 
         if (states.size <= 2) {
             return states.maxByOrNull { it.lastChanged }?.musicEvent ?: "minecraft:music.game"
@@ -833,7 +867,7 @@ object MusicManager {
     private fun determineMusicEventForPlayers(): String {
         if (isGlobalDragonFight()) return "minecraft:music.dragon"
         if (creditsPlayers.isNotEmpty()) return "minecraft:music.credits"
-        if (opPlayerStates.isNotEmpty()) return determineDominantMusicEvent()
+        if (playerMusicStates.isNotEmpty()) return determineDominantMusicEvent()
         return "minecraft:music.game"
     }
 
@@ -951,7 +985,7 @@ object MusicManager {
     }
 
     private fun dimPlayTrack(stream: DimensionStream, trackId: String) {
-        val actualTrackId: String
+        var actualTrackId: String
         val actualSpecific: String
         if (trackId.contains("|")) {
             val parts = trackId.split("|", limit = 2)
@@ -961,6 +995,11 @@ object MusicManager {
             actualTrackId = trackId
             actualSpecific = ""
         }
+
+        if (actualTrackId.startsWith("custom:", ignoreCase = true)) {
+            actualTrackId = canonicalCustomTrackId(actualTrackId) ?: return
+        }
+
         stream.track = actualTrackId
         stream.specific = actualSpecific
         stream.startTime = System.currentTimeMillis()
@@ -1090,7 +1129,12 @@ object MusicManager {
     }
 
     private fun dimPlayNext(stream: DimensionStream) {
-        val musicEvent = determineDimMusicEvent(stream)
+        val server = currentServer()
+        val dimVotes = server?.playerList?.players
+            ?.filter { it.entityLevel().dimension().location().toString() == stream.dimensionId }
+            ?.map { computeMusicEventForPlayer(it) }
+            .orEmpty()
+        val musicEvent = choosePreferredMusicEvent(determineDimMusicEvent(stream), dimVotes, stream.recent)
         stream.recent.add(musicEvent)
         if (stream.recent.size > maxRecentTracks) stream.recent.removeAt(0)
         dimPlayTrack(stream, musicEvent)
@@ -1260,16 +1304,16 @@ object MusicManager {
         sendAppropriateSyncToPlayer(player, toDim)
         broadcastStatusToPlayer(player, toDim)
 
-        checkOpPlayerStates()
+        checkPlayerMusicStates()
     }
 
     fun onPlayerJoin(player: ServerPlayer) {
         if (player.uuid !in playerJoinOrder) playerJoinOrder.add(player.uuid)
 
         val dim = player.entityLevel().dimension().location().toString()
-        if (isPlayerOp(player) && dim == "minecraft:overworld") {
+        if (dim == "minecraft:overworld") {
             val musicEvent = computeMusicEventForPlayer(player)
-            opPlayerStates[player.uuid] = OpPlayerState(musicEvent, System.currentTimeMillis())
+            playerMusicStates[player.uuid] = PlayerMusicState(musicEvent, System.currentTimeMillis())
             lastDominantMusicEvent = determineDominantMusicEvent()
         }
 
@@ -1323,7 +1367,7 @@ object MusicManager {
         sendAppropriateSyncToPlayer(player, dim)
         broadcastStatusToPlayer(player, dim)
         if (cleanedAnyInactive) broadcastStatus()
-        checkOpPlayerStates()
+        checkPlayerMusicStates()
     }
 
     private fun getAuthorityForPrimary(): java.util.UUID? {
@@ -1356,7 +1400,7 @@ object MusicManager {
             return
         }
 
-        opPlayerStates.remove(leavingPlayer.uuid)
+        playerMusicStates.remove(leavingPlayer.uuid)
         playersDownloading.remove(leavingPlayer.uuid)
         lastSeekTime.remove(leavingPlayer.uuid)
         lastSkipTime.remove(leavingPlayer.uuid)
@@ -1389,7 +1433,7 @@ object MusicManager {
             }
         }
 
-        onOpStateChanged()
+        onPlayerMusicStateChanged()
     }
 
     internal fun forceSyncAll() {
@@ -1753,7 +1797,7 @@ object MusicManager {
         ticksSinceLastMusic = 0
         currentTrackSession = 0L
         pendingClientEndSession = -1L
-        opPlayerStates.clear()
+        playerMusicStates.clear()
         lastDominantMusicEvent = null
         lastDragonFightActive = false
         opStateCheckCounter = 0
@@ -1871,7 +1915,8 @@ object MusicManager {
         PacketHandler.sendToPlayer(player, packet)
     }
 
-    fun getCustomTracks(): List<String> = CustomTrackManager.getTrackNames()
+    fun getCustomTracks(): List<String> =
+        (CustomTrackManager.getTrackNames() + CustomTrackManager.getInternalTrackNames()).distinct().sorted()
 
     private fun hotloadTracks() {
         val server = currentServer() ?: return

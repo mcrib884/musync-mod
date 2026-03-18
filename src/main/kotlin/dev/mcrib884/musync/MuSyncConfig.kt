@@ -46,6 +46,6 @@ object MuSyncLog {
     }
 
     fun error(message: String, vararg args: Any?) {
-        if (MuSyncConfig.logging) logger.error(message, *args)
+        logger.error(message, *args)
     }
 }

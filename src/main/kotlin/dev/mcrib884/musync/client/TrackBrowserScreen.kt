@@ -37,10 +37,20 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     private var searchField: EditBox? = null
 
     private val isOp: Boolean
-        get() = Minecraft.getInstance().player?.hasPermissions(2) == true
+        get() = ClientOnlyController.isActive || Minecraft.getInstance().player?.hasPermissions(2) == true
 
     private val tracks: List<Pair<String, String>> by lazy {
-        MuSyncCommand.getAllTracksForBrowser()
+        val base = MuSyncCommand.getAllTracksForBrowser().toMutableList()
+        if (ClientOnlyController.isActive) {
+            for (name in ClientOnlyController.getLocalCustomTracks()) {
+                val key = "custom:$name"
+                if (base.none { it.first == key }) {
+                    val displayName = "[Local] " + dev.mcrib884.musync.TrackNames.formatCustomTrackName(name)
+                    base.add(key to displayName)
+                }
+            }
+        }
+        base
     }
 
     private fun filteredTracks(): List<Pair<String, String>> {
@@ -195,7 +205,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             graphics.drawCenteredString(font, "Selected: $selDisplay", cx, panelY + panelH - 44, 0xFF00CC66.toInt())
         }
 
-        if (!isOp) {
+        if (!isOp && !ClientOnlyController.isActive) {
             graphics.drawCenteredString(font, "\u26A0 View only (OP required)", cx, panelY + panelH - 44, 0xFFFF5555.toInt())
         }
 
@@ -308,7 +318,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             GuiComponent.drawCenteredString(poseStack, font, "Selected: $selDisplay", cx, panelY + panelH - 44, 0xFF00CC66.toInt())
         }
 
-        if (!isOp) {
+        if (!isOp && !ClientOnlyController.isActive) {
             GuiComponent.drawCenteredString(poseStack, font, "\u26A0 View only (OP required)", cx, panelY + panelH - 44, 0xFFFF5555.toInt())
         }
 
@@ -404,6 +414,10 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
     private fun playSelected() {
         val key = selectedTrackKey ?: return
+        if (ClientOnlyController.isActive) {
+            ClientOnlyController.playTrack(key)
+            return
+        }
         val packet = MusicControlPacket(
             action = MusicControlPacket.Action.PLAY_TRACK,
             trackId = key,
@@ -414,6 +428,10 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
 
     private fun queueSelected() {
         val key = selectedTrackKey ?: return
+        if (ClientOnlyController.isActive) {
+            ClientOnlyController.addToQueue(key)
+            return
+        }
         val packet = MusicControlPacket(
             action = MusicControlPacket.Action.ADD_TO_QUEUE,
             trackId = key,

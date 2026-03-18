@@ -141,10 +141,12 @@ object MuSyncCommand {
                                     if (isDownloading(ctx)) return@executes 0
                                     val input = StringArgumentType.getString(ctx, "track").lowercase().replace(" ", "_")
 
-                                    if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(input)) {
-                                        dev.mcrib884.musync.server.MusicManager.playTrack("custom:$input")
+                                    val customInput = input.removePrefix("custom:")
+                                    val customInternal = dev.mcrib884.musync.server.CustomTrackManager.toInternalName(customInput)
+                                    if (customInternal != null) {
+                                        dev.mcrib884.musync.server.MusicManager.playTrack("custom:$customInternal")
                                                                                 ctx.source.sendSuccessCompat(
-                                            { Component.literal("Now playing custom: $input") },
+                                            { Component.literal("Now playing: ${dev.mcrib884.musync.TrackNames.formatTrack("custom:$customInternal")}") },
                                             true
                                         )
                                         return@executes 1
@@ -234,10 +236,12 @@ object MuSyncCommand {
                                     if (isDownloading(ctx)) return@executes 0
                                     val input = StringArgumentType.getString(ctx, "track").lowercase().replace(" ", "_")
 
-                                    if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(input)) {
-                                        dev.mcrib884.musync.server.MusicManager.addToQueue("custom:$input")
+                                    val customInput = input.removePrefix("custom:")
+                                    val customInternal = dev.mcrib884.musync.server.CustomTrackManager.toInternalName(customInput)
+                                    if (customInternal != null) {
+                                        dev.mcrib884.musync.server.MusicManager.addToQueue("custom:$customInternal")
                                         ctx.source.sendSuccessCompat(
-                                            { Component.literal("Added to queue: $input (custom)") },
+                                            { Component.literal("Added to queue: ${dev.mcrib884.musync.TrackNames.formatTrack("custom:$customInternal")}") },
                                             true
                                         )
                                         return@executes 1
@@ -479,7 +483,7 @@ object MuSyncCommand {
     }
 
     private fun formatTrackName(trackId: String): String {
-        return dev.mcrib884.musync.TrackNames.formatDisplayName(trackId)
+        return dev.mcrib884.musync.TrackNames.formatTrack(trackId)
     }
 
     private fun formatAliasName(alias: String): String {
@@ -547,9 +551,10 @@ object MuSyncCommand {
         }
 
         dev.mcrib884.musync.client.ClientTrackManager.getServerCustomTrackNames().forEach { name ->
-            if (!TRACK_MAP.containsKey(name)) {
-                val displayName = "[Custom] " + name.replace("_", " ").replaceFirstChar { it.uppercase() }
-                entries.putIfAbsent(name, displayName)
+            val key = "custom:$name"
+            if (!TRACK_MAP.containsKey(key)) {
+                val displayName = "[Custom] " + dev.mcrib884.musync.TrackNames.formatCustomTrackName(name)
+                entries.putIfAbsent(key, displayName)
             }
         }
 
@@ -586,7 +591,7 @@ object MuSyncCommand {
     }
 
     fun toBrowserTrackKey(trackId: String): String {
-        if (trackId.startsWith("custom:")) return trackId.removePrefix("custom:")
+        if (trackId.startsWith("custom:")) return trackId
 
         if (trackId.contains("|alias:")) {
             return trackId.substringAfter("|alias:")
@@ -623,8 +628,10 @@ object MuSyncCommand {
     fun getTrackId(friendlyName: String): String? {
         val key = friendlyName.lowercase().replace(" ", "_")
 
-        if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(key)) {
-            return "custom:$key"
+        val customKey = key.removePrefix("custom:")
+        val internal = dev.mcrib884.musync.server.CustomTrackManager.toInternalName(customKey)
+        if (internal != null) {
+            return "custom:$internal"
         }
         val value = TRACK_MAP[key] ?: return null
         val eventId = value.substringBefore("|")
@@ -634,8 +641,10 @@ object MuSyncCommand {
 
     fun resolveTrackValue(friendlyName: String): String? {
         val key = friendlyName.lowercase().replace(" ", "_")
-        if (dev.mcrib884.musync.server.CustomTrackManager.hasTrack(key)) {
-            return "custom:$key"
+        val customKey = key.removePrefix("custom:")
+        val internal = dev.mcrib884.musync.server.CustomTrackManager.toInternalName(customKey)
+        if (internal != null) {
+            return "custom:$internal"
         }
         TRACK_MAP[key]?.let {
             val eventId = it.substringBefore("|")

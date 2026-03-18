@@ -30,23 +30,30 @@ object CustomTrackPlayer {
         private var channels: Int = 0
 
         init {
-            inputBuffer = MemoryUtil.memAlloc(oggData.size)
-            inputBuffer!!.put(oggData)
-            inputBuffer!!.flip()
+            val buffer = MemoryUtil.memAlloc(oggData.size)
+            inputBuffer = buffer
+            try {
+                buffer.put(oggData)
+                buffer.flip()
 
-            MemoryStack.stackPush().use { stack ->
-                val error = stack.mallocInt(1)
-                handle = STBVorbis.stb_vorbis_open_memory(inputBuffer, error, null)
-                if (handle == 0L) {
-                    throw Exception("STBVorbis error ${error[0]}")
+                MemoryStack.stackPush().use { stack ->
+                    val error = stack.mallocInt(1)
+                    handle = STBVorbis.stb_vorbis_open_memory(buffer, error, null)
+                    if (handle == 0L) {
+                        throw Exception("STBVorbis error ${error[0]}")
+                    }
+                    val info = STBVorbisInfo.malloc(stack)
+                    STBVorbis.stb_vorbis_get_info(handle, info)
+                    channels = info.channels()
+                    sampleRate = info.sample_rate()
+                    val totalSamples = STBVorbis.stb_vorbis_stream_length_in_samples(handle)
+                    durationMs = if (sampleRate > 0) (totalSamples.toLong() * 1000L) / sampleRate.toLong() else -1L
+                    format = if (channels == 1) AL10.AL_FORMAT_MONO16 else AL10.AL_FORMAT_STEREO16
                 }
-                val info = STBVorbisInfo.malloc(stack)
-                STBVorbis.stb_vorbis_get_info(handle, info)
-                channels = info.channels()
-                sampleRate = info.sample_rate()
-                val totalSamples = STBVorbis.stb_vorbis_stream_length_in_samples(handle)
-                durationMs = if (sampleRate > 0) (totalSamples.toLong() * 1000L) / sampleRate.toLong() else -1L
-                format = if (channels == 1) AL10.AL_FORMAT_MONO16 else AL10.AL_FORMAT_STEREO16
+            } catch (e: Exception) {
+                MemoryUtil.memFree(buffer)
+                inputBuffer = null
+                throw e
             }
         }
 
@@ -73,8 +80,9 @@ object CustomTrackPlayer {
                 STBVorbis.stb_vorbis_close(handle)
                 handle = 0L
             }
-            inputBuffer?.let {
-                MemoryUtil.memFree(it)
+            val buffer = inputBuffer
+            if (buffer != null) {
+                MemoryUtil.memFree(buffer)
                 inputBuffer = null
             }
         }
@@ -385,6 +393,13 @@ object CustomTrackPlayer {
             } catch (e: Exception) {
                 dev.mcrib884.musync.MuSyncLog.error("Error stopping custom track: ${e.message}")
             }
+        }
+    }
+
+    fun stopAll() {
+        val sources = activeStreams.keys.toList()
+        for (source in sources) {
+            stop(source)
         }
     }
 }

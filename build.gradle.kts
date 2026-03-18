@@ -11,6 +11,15 @@ plugins {
 val mcVersion = stonecutter.current.version
 val loaderPlatform: String = requireNotNull(findProperty("loom.platform") as? String) { "loom.platform property is required but not found" }
 
+fun nextPatchVersion(version: String): String {
+	val parts = version.split(".")
+	if (parts.size < 3) return version
+	val major = parts[0]
+	val minor = parts[1]
+	val patch = parts[2].toIntOrNull() ?: return version
+	return "$major.$minor.${patch + 1}"
+}
+
 val modGroup: String by project
 val modVersion: String by project
 val modId: String by project
@@ -45,7 +54,7 @@ loom {
 			client()
 			configName = "Client"
 			runDir("../../.runs/client")
-			programArg("--username=Dev")
+			programArg("--username=Player")
 			ideConfigGenerated(true)
 		}
 		named("server") {
@@ -123,11 +132,15 @@ tasks {
 		val modDescription: String by project
 		val modLicense: String by project
 		val modAuthors: String by project
+		val kffLoaderVersionRange = (findProperty("kffLoaderVersionRange") as? String)
+			?: if (loaderPlatform == "fabric") "*" else error("kffLoaderVersionRange property is required for $loaderPlatform")
 
 		val packFormat: String by project
+		val mcUpperBound = nextPatchVersion(mcVersion)
 		val props = mutableMapOf(
 			"java_version" to javaVersion,
 			"minecraft_version" to mcVersion,
+			"minecraft_version_range" to "[$mcVersion,$mcUpperBound)",
 			"pack_format" to packFormat,
 
 			"mod_version" to modVersion,
@@ -140,6 +153,7 @@ tasks {
 			"mod_authors" to modAuthors,
 
 			"loader_version" to loaderVersion,
+			"kff_loader_version_range" to kffLoaderVersionRange,
 		)
 
 		inputs.properties(props)

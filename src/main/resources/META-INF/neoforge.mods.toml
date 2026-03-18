@@ -1,5 +1,5 @@
 modLoader = "kotlinforforge"
-loaderVersion = "[5,)"
+loaderVersion = "${kff_loader_version_range}"
 issueTrackerURL = "https://github.com/mcrib884/musync/issues"
 license = "${mod_license}"
 
@@ -21,7 +21,7 @@ side = "BOTH"
 [[dependencies."${mod_id}"]]
 modId = "minecraft"
 type = "required"
-versionRange = "[${minecraft_version},)"
+versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 

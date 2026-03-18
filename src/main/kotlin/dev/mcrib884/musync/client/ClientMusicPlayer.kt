@@ -84,6 +84,14 @@ object ClientMusicPlayer {
     fun handleSyncPacket(packet: MusicSyncPacket) {
         musyncActive = true
         val mc = Minecraft.getInstance()
+        val adjustedPositionMs = if (packet.serverTimeMs > 0 && packet.action in setOf(
+                MusicSyncPacket.Action.PLAY, MusicSyncPacket.Action.RESUME, MusicSyncPacket.Action.SEEK
+            )) {
+            val transit = (System.currentTimeMillis() - packet.serverTimeMs).coerceIn(0, 500)
+            packet.startPositionMs + transit
+        } else {
+            packet.startPositionMs
+        }
         mc.execute {
             suppressVanillaMusic(mc)
             when (packet.action) {
@@ -91,7 +99,7 @@ object ClientMusicPlayer {
                     if (isLoading) {
                         pendingSyncPacket = packet
                     } else {
-                        playMusic(packet.trackId, packet.startPositionMs, packet.specificSound)
+                        playMusic(packet.trackId, adjustedPositionMs, packet.specificSound)
                     }
                 }
                 MusicSyncPacket.Action.STOP -> {
@@ -109,7 +117,7 @@ object ClientMusicPlayer {
                     if (isLoading) {
                         pendingSyncPacket = packet
                     } else {
-                        applyResumeSync(packet.trackId, packet.startPositionMs, packet.specificSound)
+                        applyResumeSync(packet.trackId, adjustedPositionMs, packet.specificSound)
                     }
                 }
                 MusicSyncPacket.Action.SKIP -> {
@@ -125,7 +133,7 @@ object ClientMusicPlayer {
                     if (isLoading) {
                         pendingSyncPacket = packet
                     } else {
-                        seekInPlace(packet.trackId, packet.startPositionMs)
+                        seekInPlace(packet.trackId, adjustedPositionMs)
                     }
                 }
             }
@@ -583,6 +591,7 @@ object ClientMusicPlayer {
         clearLoadingState(cancelCurrentLoad = true, clearPending = true)
         suppressVanillaMusic()
         stopMusicInternal()
+        CustomTrackPlayer.stopAll()
         currentTrack = null
         isPlaying = false
         isPaused = false
@@ -599,5 +608,7 @@ object ClientMusicPlayer {
         lastMasterVol = -1f
         lastResolvedSound = null
         JukeboxTracker.clear()
+        PausedSourceTracker.clear()
+        ClientOnlyController.reset()
     }
 }

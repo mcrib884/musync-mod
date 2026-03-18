@@ -38,7 +38,11 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     private var deleteBounds: BtnBounds? = null
 
     private val isOp: Boolean
-        get() = Minecraft.getInstance().player?.hasPermissions(2) == true
+        get() = ClientOnlyController.isActive || Minecraft.getInstance().player?.hasPermissions(2) == true
+
+    private fun effectiveStatus(): dev.mcrib884.musync.network.MusicStatusPacket? {
+        return if (ClientOnlyController.isActive) ClientOnlyController.getStatus() else ClientMusicPlayer.getCurrentStatus()
+    }
 
     private fun formatTrack(id: String): String {
         return dev.mcrib884.musync.TrackNames.formatTrack(id)
@@ -59,7 +63,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     private fun savedNames(): List<String> = SavedPlaylistManager.getPlaylistNames()
 
     private fun getSaveableTracks(): List<String> {
-        val status = ClientMusicPlayer.getCurrentStatus() ?: return emptyList()
+        val status = effectiveStatus() ?: return emptyList()
         val tracks = mutableListOf<String>()
         if (status.mode == dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST && status.currentTrack != null) {
             tracks.add(dev.mcrib884.musync.command.MuSyncCommand.toBrowserTrackKey(status.currentTrack))
@@ -84,26 +88,34 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         val tracks = SavedPlaylistManager.getPlaylist(playlistName)
         if (tracks.isEmpty()) return
 
-        PacketHandler.sendToServer(
-            MusicControlPacket(MusicControlPacket.Action.CLEAR_QUEUE, null, null)
-        )
-        val status = ClientMusicPlayer.getCurrentStatus()
-        val shouldStartImmediately = status?.isPlaying == true &&
-            status.currentTrack != null &&
-            status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST
-        if (shouldStartImmediately) {
-            PacketHandler.sendToServer(
-                MusicControlPacket(MusicControlPacket.Action.PLAY_TRACK, tracks.first(), null)
-            )
+        if (ClientOnlyController.isActive) {
+            ClientOnlyController.clearQueue()
+            ClientOnlyController.playTrack(tracks.first())
+            for (track in tracks.drop(1)) {
+                ClientOnlyController.addToQueue(track)
+            }
         } else {
             PacketHandler.sendToServer(
-                MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, tracks.first(), null)
+                MusicControlPacket(MusicControlPacket.Action.CLEAR_QUEUE, null, null)
             )
-        }
-        for (track in tracks.drop(1)) {
-            PacketHandler.sendToServer(
-                MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, track, null)
-            )
+            val status = effectiveStatus()
+            val shouldStartImmediately = status?.isPlaying == true &&
+                status.currentTrack != null &&
+                status.mode != dev.mcrib884.musync.network.MusicStatusPacket.PlayMode.PLAYLIST
+            if (shouldStartImmediately) {
+                PacketHandler.sendToServer(
+                    MusicControlPacket(MusicControlPacket.Action.PLAY_TRACK, tracks.first(), null)
+                )
+            } else {
+                PacketHandler.sendToServer(
+                    MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, tracks.first(), null)
+                )
+            }
+            for (track in tracks.drop(1)) {
+                PacketHandler.sendToServer(
+                    MusicControlPacket(MusicControlPacket.Action.ADD_TO_QUEUE, track, null)
+                )
+            }
         }
     }
 
@@ -163,7 +175,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
         graphics.drawCenteredString(font, "\u266B Playlist Queue \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
-        val status = ClientMusicPlayer.getCurrentStatus()
+        val status = effectiveStatus()
         val queue = status?.queue ?: emptyList()
         val saved = savedNames()
         val queueListY = queueHeaderY()
@@ -323,7 +335,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         loadBounds?.let { b -> drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canLoad) }
         deleteBounds?.let { b -> drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canDelete) }
 
-        if (!isOp) {
+        if (!isOp && !ClientOnlyController.isActive) {
             graphics.drawCenteredString(font, "\u26A0 Load requires OP; saves are local to this client", cx, panelY + panelH - 70, 0xFFFF5555.toInt())
         }
 
@@ -341,7 +353,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
         GuiComponent.drawCenteredString(poseStack, font, "\u266B Playlist Queue \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
-        val status = ClientMusicPlayer.getCurrentStatus()
+        val status = effectiveStatus()
         val queue = status?.queue ?: emptyList()
         val saved = savedNames()
         val queueListY = queueHeaderY()
@@ -501,7 +513,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         loadBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canLoad1919) }
         deleteBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, canDelete1919) }
 
-        if (!isOp) {
+        if (!isOp && !ClientOnlyController.isActive) {
             GuiComponent.drawCenteredString(poseStack, font, "\u26A0 Load requires OP; saves are local to this client", cx, panelY + panelH - 70, 0xFFFF5555.toInt())
         }
 
@@ -511,7 +523,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
     override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0) {
-            val status = ClientMusicPlayer.getCurrentStatus()
+            val status = effectiveStatus()
             val queue = status?.queue ?: emptyList()
             val queueListY = queueRowsY()
             val queueMaxScroll = (queue.size - visibleRows).coerceAtLeast(0)
@@ -555,12 +567,16 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
                     val rowTop = slotY + 1
                     val rowBottom = slotY + rowH - 1
                     if (mouseX >= xBtnX && mouseX < xBtnX + 12 && mouseY >= rowTop && mouseY < rowBottom) {
-                        val packet = MusicControlPacket(
-                            action = MusicControlPacket.Action.REMOVE_FROM_QUEUE,
-                            trackId = null,
-                            queuePosition = idx
-                        )
-                        PacketHandler.sendToServer(packet)
+                        if (ClientOnlyController.isActive) {
+                            ClientOnlyController.removeFromQueue(idx)
+                        } else {
+                            val packet = MusicControlPacket(
+                                action = MusicControlPacket.Action.REMOVE_FROM_QUEUE,
+                                trackId = null,
+                                queuePosition = idx
+                            )
+                            PacketHandler.sendToServer(packet)
+                        }
                         return true
                     }
                 }
@@ -616,7 +632,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
     override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
         if (draggingQueueScrollbar && button == 0) {
-            val queueSize = ClientMusicPlayer.getCurrentStatus()?.queue?.size ?: 0
+            val queueSize = effectiveStatus()?.queue?.size ?: 0
             val listY = queueRowsY()
             val barTotalH = visibleRows * rowH
             val maxScroll = (queueSize - visibleRows).coerceAtLeast(0)
@@ -659,7 +675,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             val maxScroll = (savedNames().size - savedVisibleRows).coerceAtLeast(0)
             savedScrollOffset = (savedScrollOffset - delta.toInt()).coerceIn(0, maxScroll)
         } else {
-            val queueSize = ClientMusicPlayer.getCurrentStatus()?.queue?.size ?: 0
+            val queueSize = effectiveStatus()?.queue?.size ?: 0
             val maxScroll = (queueSize - visibleRows).coerceAtLeast(0)
             queueScrollOffset = (queueScrollOffset - delta.toInt()).coerceIn(0, maxScroll)
         }

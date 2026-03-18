@@ -66,7 +66,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var displayedHasTrack: Boolean = false
 
     private val isOp: Boolean
-        get() = Minecraft.getInstance().player?.hasPermissions(2) == true
+        get() = ClientOnlyController.isActive || Minecraft.getInstance().player?.hasPermissions(2) == true
+
+    private fun effectiveStatus(): MusicStatusPacket? {
+        return if (ClientOnlyController.isActive) ClientOnlyController.getStatus() else ClientMusicPlayer.getCurrentStatus()
+    }
 
     override fun init() {
         super.init()
@@ -118,7 +122,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         maxDelayField!!.setTextColorUneditable(0xFF667766.toInt())
         addRenderableWidget(maxDelayField!!)
 
-        val status = ClientMusicPlayer.getCurrentStatus()
+        val status = effectiveStatus()
         syncDelayFields(status)
 
         val smallBtnW = 44
@@ -163,7 +167,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
         graphics.fill(panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
 
-        val syncingNow = ClientMusicPlayer.getCurrentStatus()?.syncOverworld == true
+        val syncingNow = effectiveStatus()?.syncOverworld == true
         val dimBtnLabel = if (syncingNow) "\u00A7aO" else getDimLabel(viewedDimId)
         val syncBtnHovered = mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize
         val hotloadBtnHovered = mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize
@@ -176,7 +180,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         graphics.drawCenteredString(font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
-        val status = ClientMusicPlayer.getCurrentStatus()
+        val status = effectiveStatus()
         syncDelayFields(status)
         val ownPosition = if (status != null && status.isPlaying && status.currentTrack != null) {
             ClientMusicPlayer.getCurrentPositionMs()
@@ -382,7 +386,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val syncHov1919 = mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize
         val hotloadHov1919 = mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize
         val dimHov1919 = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
-        val syncing1919 = ClientMusicPlayer.getCurrentStatus()?.syncOverworld == true
+        val syncing1919 = effectiveStatus()?.syncOverworld == true
         val dimBtnLbl1919 = if (syncing1919) "\u00A7aO" else getDimLabel(viewedDimId)
         GuiComponent.fill(poseStack, syncBtnX, syncBtnY, syncBtnX + topBtnSize, syncBtnY + topBtnSize, if (syncHov1919) 0xFF334433.toInt() else 0xFF1C1C2A.toInt())
         GuiComponent.fill(poseStack, syncBtnX, syncBtnY, syncBtnX + topBtnSize, syncBtnY + 1, 0xFF00CC66.toInt())
@@ -402,7 +406,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         GuiComponent.drawCenteredString(poseStack, font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
 
-        val status = ClientMusicPlayer.getCurrentStatus()
+        val status = effectiveStatus()
         syncDelayFields(status)
         val ownPosition = if (status != null && status.isPlaying && status.currentTrack != null) {
             ClientMusicPlayer.getCurrentPositionMs()
@@ -648,20 +652,24 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             if (displayedHasTrack && displayedDuration > 0) {
                 val clickProgress = ((mouseX - barX) / barW).coerceIn(0.0, 1.0)
                 val seekMs = (clickProgress * displayedDuration).toLong()
-                val packet = MusicControlPacket(
-                    action = MusicControlPacket.Action.SEEK,
-                    trackId = null,
-                    queuePosition = null,
-                    seekMs = seekMs,
-                    targetDim = viewedDimId
-                )
-                PacketHandler.sendToServer(packet)
+                if (ClientOnlyController.isActive) {
+                    ClientOnlyController.seek(seekMs)
+                } else {
+                    val packet = MusicControlPacket(
+                        action = MusicControlPacket.Action.SEEK,
+                        trackId = null,
+                        queuePosition = null,
+                        seekMs = seekMs,
+                        targetDim = viewedDimId
+                    )
+                    PacketHandler.sendToServer(packet)
+                }
                 lastSeekTimeMs = now
                 return true
             }
         }
         if (button == 0 && dimFlyoutOpen) {
-            val status3 = ClientMusicPlayer.getCurrentStatus()
+            val status3 = effectiveStatus()
             val flyoutDims3 = status3?.activeDimensions?.filter { it.players.isNotEmpty() && it.id != viewedDimId }.orEmpty()
             val gap = 2
             for ((i, dim) in flyoutDims3.withIndex()) {
@@ -669,7 +677,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 if (mxi in bx until bx + topBtnSize && myi in dimBtnY until dimBtnY + topBtnSize) {
                     viewedDimId = dim.id
                     dimFlyoutOpen = false
-                    sendControl(MusicControlPacket.Action.REQUEST_SYNC)
+                    sendControl(MusicControlPacket.Action.SELECT_DIMENSION)
                     return true
                 }
             }
@@ -723,6 +731,27 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     }
 
     private fun sendControl(action: MusicControlPacket.Action, trackId: String? = null) {
+        if (ClientOnlyController.isActive) {
+            when (action) {
+                MusicControlPacket.Action.STOP -> ClientOnlyController.stop()
+                MusicControlPacket.Action.PAUSE -> ClientOnlyController.pause()
+                MusicControlPacket.Action.RESUME -> ClientOnlyController.resume()
+                MusicControlPacket.Action.SKIP -> ClientOnlyController.skip()
+                MusicControlPacket.Action.SET_DELAY -> {
+                    if (trackId == "reset") {
+                        ClientOnlyController.resetDelay()
+                    } else if (trackId != null && trackId.contains(":")) {
+                        val parts = trackId.split(":")
+                        val min = parts[0].toIntOrNull() ?: return
+                        val max = parts[1].toIntOrNull() ?: return
+                        ClientOnlyController.setDelay(min, max)
+                    }
+                }
+                MusicControlPacket.Action.SELECT_DIMENSION -> {}
+                else -> {}
+            }
+            return
+        }
         val packet = MusicControlPacket(action = action, trackId = trackId, queuePosition = null, targetDim = viewedDimId)
         PacketHandler.sendToServer(packet)
     }
@@ -1096,7 +1125,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     }
 
     private fun formatSoundEvent(id: String): String {
-        return dev.mcrib884.musync.TrackNames.formatPoolName(id)
+        return if (id.startsWith("custom:")) {
+            dev.mcrib884.musync.TrackNames.formatTrack(id)
+        } else {
+            dev.mcrib884.musync.TrackNames.formatPoolName(id)
+        }
     }
 
     private fun getMusicVolume(): Float {

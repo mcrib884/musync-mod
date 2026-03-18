@@ -4,7 +4,7 @@ import java.io.File
 
 object CustomTrackManager {
 
-        private val SAFE_BASE = Regex("^[a-z0-9_\\-]+$")
+    private val SAFE_BASE = Regex("^[a-z0-9_\\-]+$")
     private val SAFE_INTERNAL = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
 
     private data class TrackInfo(val file: File, val size: Long)
@@ -13,11 +13,9 @@ object CustomTrackManager {
     @Volatile
     private var baseAliases: Map<String, String> = emptyMap()
 
-    const val MAX_TRACK_SIZE = 50L * 1024 * 1024
-
     fun scan(serverDir: File) {
         val nextTracks = mutableMapOf<String, TrackInfo>()
-        val nextAliases = mutableMapOf<String, String>()
+        val aliasCandidates = mutableMapOf<String, MutableList<String>>()
 
         val folder = File(serverDir, "customtracks")
         if (!folder.exists()) {
@@ -38,10 +36,6 @@ object CustomTrackManager {
         }).sortedBy { it.name.lowercase() }
 
         for (file in audioFiles) {
-            if (file.length() > MAX_TRACK_SIZE) {
-                dev.mcrib884.musync.MuSyncLog.warn("Skipping oversized custom track: ${file.name} (${file.length()} bytes, max=${MAX_TRACK_SIZE})")
-                continue
-            }
             val baseName = file.nameWithoutExtension.lowercase().replace(" ", "_")
             if (!SAFE_BASE.matches(baseName)) {
                 dev.mcrib884.musync.MuSyncLog.warn("Skipping unsafe custom track name: ${file.name}")
@@ -50,12 +44,14 @@ object CustomTrackManager {
             val extension = file.extension.lowercase()
             val internalName = "$baseName.$extension"
             nextTracks[internalName] = TrackInfo(file, file.length())
-            nextAliases.putIfAbsent(baseName, internalName)
+            aliasCandidates.getOrPut(baseName) { mutableListOf() }.add(internalName)
             dev.mcrib884.musync.MuSyncLog.info("Indexed custom track: $internalName (${file.length()} bytes)")
         }
 
         tracks = nextTracks
-        baseAliases = nextAliases
+        baseAliases = aliasCandidates
+            .filterValues { it.size == 1 }
+            .mapValues { it.value.first() }
         dev.mcrib884.musync.MuSyncLog.info("Indexed ${tracks.size} custom tracks from ${folder.absolutePath}")
     }
 

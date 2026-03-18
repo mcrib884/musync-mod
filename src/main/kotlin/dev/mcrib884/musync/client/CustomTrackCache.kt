@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 object CustomTrackCache {
     
-    private const val MAX_CACHE_BYTES = 200L * 1024 * 1024
-    private const val MAX_ENTRIES = 50
+    private const val MAX_CACHE_BYTES = 100L * 1024 * 1024
+    private const val MAX_ENTRIES = 30
     private const val MAX_PENDING = 5
     private const val MAX_TOTAL_CHUNKS = 5000
     private const val PENDING_TIMEOUT_MS = 60_000L
@@ -78,10 +78,6 @@ object CustomTrackCache {
                 offset += chunk.size
             }
             putWithEviction(trackName, assembled)
-            val base = baseName(trackName)
-            if (base != trackName) {
-                putWithEviction(base, assembled)
-            }
             pending.remove(trackName)
             ClientTrackManager.onTrackDownloaded(trackName, totalChunks, assembled)
             dev.mcrib884.musync.MuSyncLog.info("Cached custom track: $trackName (${assembled.size} bytes)")
@@ -125,10 +121,11 @@ object CustomTrackCache {
     fun get(trackName: String): ByteArray? {
         cache[trackName]?.let { return it }
         val base = baseName(trackName)
-        if (base != trackName) {
-            cache[base]?.let { return it }
-        } else {
-            cache.entries.firstOrNull { it.key.startsWith("$trackName.") }?.value?.let { return it }
+        if (base == trackName) {
+            val matches = cache.entries.filter { it.key.startsWith("$trackName.") }
+            if (matches.size == 1) {
+                return matches.first().value
+            }
         }
         return null
     }
