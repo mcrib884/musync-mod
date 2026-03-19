@@ -7,7 +7,7 @@ A client and server-side mod that synchronizes Minecraft background music across
 
 - **Dimensional Syncing:** Maintains independent synchronized music streams for different dimensions.
 
-- **Support for Resource Packs:** Automatically loads and synchronizes custom music added through server resource packs ,custom music folder in .minecraft,or mods without requiring any extra configuration.only accepts .waw and .ogg
+- **Support for Resource Packs:** Automatically loads and synchronizes custom music added through server resource packs, custom music folder in .minecraft, or mods without requiring any extra configuration. Supports .ogg, .wav, and .mp3.
 
 - **Client Synchronization:** New players joining the server or switching dimensions automatically sync.
 

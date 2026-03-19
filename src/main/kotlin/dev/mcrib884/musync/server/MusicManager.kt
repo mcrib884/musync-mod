@@ -15,13 +15,15 @@ import java.io.File
 import dev.mcrib884.musync.entityLevel
 
 object MusicManager {
-        private var currentTrack: String? = null
+    private var currentTrack: String? = null
     private var trackStartTime: Long = 0
     private var trackDuration: Long = 0
     private var isPlaying: Boolean = false
     private var isPaused: Boolean = false
     private var pausedPosition: Long = 0
     private var currentMode: MusicStatusPacket.PlayMode = MusicStatusPacket.PlayMode.AUTONOMOUS
+    private var repeatMode: MusicStatusPacket.RepeatMode = MusicStatusPacket.RepeatMode.OFF
+    private var currentReplayTrack: String? = null
     private var resolvedTrackName: String? = null
     private var specificSound: String = ""
 
@@ -36,8 +38,10 @@ object MusicManager {
 
     private var currentTrackSession: Long = 0L
     private var pendingClientEndSession: Long = -1L
+    private var finishReportBlockedUntilMs: Long = 0L
     private const val TRACK_TIMEOUT_BUFFER_MS = 15_000L
     private const val MIN_VALID_TRACK_FINISH_MS = 3000L
+    private const val SEEK_FINISH_GRACE_MS = 750L
 
     private data class PlayerMusicState(val musicEvent: String, val lastChanged: Long)
     private val playerMusicStates = mutableMapOf<java.util.UUID, PlayerMusicState>()
@@ -76,6 +80,7 @@ object MusicManager {
 
     private class DimensionStream(val dimensionId: String) {
         var track: String? = null
+        var replayTrack: String? = null
         var startTime: Long = 0
         var duration: Long = 0
         var playing: Boolean = false
@@ -83,6 +88,7 @@ object MusicManager {
         var pausedPos: Long = 0
         var specific: String = ""
         var resolved: String? = null
+        var finishReportBlockedUntilMs: Long = 0L
         var waiting: Boolean = false
         var ticksSince: Int = 0
         var delayTicks: Int = 0
@@ -92,8 +98,9 @@ object MusicManager {
         var lastMusicEvent: String? = null
 
         fun reset() {
-            track = null; startTime = 0; duration = 0; playing = false
+            track = null; replayTrack = null; startTime = 0; duration = 0; playing = false
             paused = false; pausedPos = 0; specific = ""; resolved = null
+            finishReportBlockedUntilMs = 0L
             waiting = false; ticksSince = 0; delayTicks = 0
             recent.clear(); clientEnd = false; active = false; lastMusicEvent = null
         }
@@ -161,6 +168,51 @@ object MusicManager {
         lastQueueAdvanceAt = now
         dev.mcrib884.musync.MuSyncLog.debug("Queue advanced to: $nextTrack")
         return nextTrack
+    }
+
+    private fun pollRandomQueuedTrack(avoidTrack: String? = null): String? {
+        val list = userPlaylist.toMutableList()
+        if (list.isEmpty()) return null
+
+        val selectableIndexes = if (!avoidTrack.isNullOrEmpty()) {
+            val avoidCount = list.count { it == avoidTrack }
+            if (avoidCount <= 1) {
+                list.indices.filter { list[it] != avoidTrack }
+            } else {
+                list.indices.toList()
+            }
+        } else {
+            list.indices.toList()
+        }
+
+        val candidateIndexes = if (selectableIndexes.isNotEmpty()) selectableIndexes else list.indices.toList()
+        val index = candidateIndexes[Random.nextInt(candidateIndexes.size)]
+        val nextTrack = list.removeAt(index)
+        userPlaylist.clear()
+        userPlaylist.addAll(list)
+        lastQueueAdvanceAt = System.currentTimeMillis()
+        return nextTrack
+    }
+
+    private fun cycleRepeatMode() {
+        repeatMode = when (repeatMode) {
+            MusicStatusPacket.RepeatMode.OFF -> MusicStatusPacket.RepeatMode.REPEAT_TRACK
+            MusicStatusPacket.RepeatMode.REPEAT_TRACK -> MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST
+            MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> MusicStatusPacket.RepeatMode.SHUFFLE
+            MusicStatusPacket.RepeatMode.SHUFFLE -> MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> MusicStatusPacket.RepeatMode.OFF
+        }
+        broadcastStatus()
+    }
+
+    private fun replayFinishedPrimaryTrack(
+        finishedTrack: String,
+        finishedMode: MusicStatusPacket.PlayMode,
+        finishedSpecific: String,
+        finishedReplayTrack: String?
+    ) {
+        currentMode = finishedMode
+        playTrack(finishedTrack, finishedSpecific, finishedReplayTrack)
     }
 
     private fun canonicalCustomTrackId(trackId: String): String? {
@@ -282,13 +334,14 @@ object MusicManager {
                 lastSeekTime[player.uuid] = now
                 if (dimStream != null) dimSeekTrack(dimStream, seekMs) else seekTrack(seekMs)
             }
+            MusicControlPacket.Action.CYCLE_REPEAT_MODE -> cycleRepeatMode()
             MusicControlPacket.Action.HOTLOAD_TRACKS -> hotloadTracks()
             MusicControlPacket.Action.TOGGLE_NETHER_SYNC -> {}
             MusicControlPacket.Action.CREDITS_SKIP -> {}
         }
     }
 
-    internal fun playTrack(trackId: String, specific: String = "") {
+    internal fun playTrack(trackId: String, specific: String = "", replayTrackId: String? = null) {
         var actualTrackId: String
         val actualSpecific: String
         if (specific.isEmpty() && trackId.contains("|")) {
@@ -304,16 +357,24 @@ object MusicManager {
             actualTrackId = canonicalCustomTrackId(actualTrackId) ?: return
         }
 
+        val effectiveReplayTrack = replayTrackId ?: when {
+            actualTrackId.startsWith("custom:", ignoreCase = true) -> actualTrackId
+            actualSpecific.isNotEmpty() -> "$actualTrackId|$actualSpecific"
+            else -> actualTrackId
+        }
+
         currentTrackSession++
         pendingClientEndSession = -1L
         currentTrack = actualTrackId
+        currentReplayTrack = effectiveReplayTrack
         specificSound = actualSpecific
         trackStartTime = System.currentTimeMillis()
         trackDuration = 0
         isPlaying = true
         isPaused = false
+        finishReportBlockedUntilMs = 0L
         waitingForNextTrack = false
-        resolvedTrackName = if (actualSpecific.isNotEmpty()) actualSpecific else null
+        resolvedTrackName = if (actualSpecific.isNotEmpty() && !actualSpecific.startsWith("alias:")) actualSpecific else null
 
         if (actualTrackId.startsWith("custom:")) {
             val server = currentServer()
@@ -332,15 +393,37 @@ object MusicManager {
     internal fun stopMusic() {
         if (currentTrack != null) broadcastSync(MusicSyncPacket.Action.STOP)
         currentTrack = null
+        currentReplayTrack = null
         isPlaying = false
         isPaused = false
+        finishReportBlockedUntilMs = 0L
+        resolvedTrackName = null
+        specificSound = ""
         currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
         scheduleNextAutonomousTrack()
         broadcastStatus()
     }
 
     internal fun skipTrack() {
-        val nextTrack = consumeQueuedTrack()
+        val skippedPlaylistTrack = if (currentMode == MusicStatusPacket.PlayMode.PLAYLIST) {
+            currentReplayTrack ?: currentTrack
+        } else {
+            null
+        }
+
+        if (skippedPlaylistTrack != null) {
+            when (repeatMode) {
+                MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST,
+                MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> userPlaylist.add(skippedPlaylistTrack)
+                else -> {}
+            }
+        }
+
+        val nextTrack = when (repeatMode) {
+            MusicStatusPacket.RepeatMode.SHUFFLE,
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> pollRandomQueuedTrack(skippedPlaylistTrack)
+            else -> consumeQueuedTrack(ignoreGuard = true)
+        }
         if (nextTrack != null) {
             currentMode = MusicStatusPacket.PlayMode.PLAYLIST
             dev.mcrib884.musync.MuSyncLog.info("Playing queued track after skip: $nextTrack")
@@ -407,6 +490,7 @@ object MusicManager {
 
             updateDimPopulation(stream)
             stream.track = null
+            stream.replayTrack = null
             stream.startTime = 0
             stream.duration = 0
             stream.playing = false
@@ -414,6 +498,7 @@ object MusicManager {
             stream.pausedPos = 0
             stream.specific = ""
             stream.resolved = null
+            stream.finishReportBlockedUntilMs = 0L
             stream.clientEnd = false
             stream.recent.clear()
 
@@ -541,6 +626,102 @@ object MusicManager {
             return
         }
 
+        val finishedTrack = currentTrack
+        val finishedMode = currentMode
+        val finishedSpecific = specificSound
+        val finishedReplayTrack = currentReplayTrack
+
+        when (repeatMode) {
+            MusicStatusPacket.RepeatMode.REPEAT_TRACK -> {
+                if (finishedTrack != null) {
+                    replayFinishedPrimaryTrack(finishedTrack, finishedMode, finishedSpecific, finishedReplayTrack)
+                } else {
+                    broadcastSync(MusicSyncPacket.Action.STOP)
+                    currentTrack = null
+                    currentReplayTrack = null
+                    isPlaying = false
+                    resolvedTrackName = null
+                    specificSound = ""
+                    currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
+                    scheduleNextAutonomousTrack()
+                    broadcastStatus()
+                }
+                return
+            }
+            MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> {
+                if (finishedMode == MusicStatusPacket.PlayMode.PLAYLIST && finishedTrack != null) {
+                    userPlaylist.add(finishedReplayTrack ?: finishedTrack)
+                }
+                val nextTrack = consumeQueuedTrack(ignoreGuard = true)
+                if (nextTrack != null) {
+                    currentMode = MusicStatusPacket.PlayMode.PLAYLIST
+                    startPlaylistTrack(nextTrack)
+                } else {
+                    dev.mcrib884.musync.MuSyncLog.info("Track finished, queue empty, scheduling autonomous playback")
+                    broadcastSync(MusicSyncPacket.Action.STOP)
+                    currentTrack = null
+                    currentReplayTrack = null
+                    isPlaying = false
+                    resolvedTrackName = null
+                    specificSound = ""
+                    currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
+                    scheduleNextAutonomousTrack()
+                    broadcastStatus()
+                }
+                return
+            }
+            MusicStatusPacket.RepeatMode.SHUFFLE -> {
+                if (finishedMode == MusicStatusPacket.PlayMode.PLAYLIST) {
+                    val nextTrack = pollRandomQueuedTrack(finishedReplayTrack ?: finishedTrack)
+                    if (nextTrack != null) {
+                        currentMode = MusicStatusPacket.PlayMode.PLAYLIST
+                        startPlaylistTrack(nextTrack)
+                    } else {
+                        dev.mcrib884.musync.MuSyncLog.info("Track finished, queue empty, scheduling autonomous playback")
+                        broadcastSync(MusicSyncPacket.Action.STOP)
+                        currentTrack = null
+                        currentReplayTrack = null
+                        isPlaying = false
+                        resolvedTrackName = null
+                        specificSound = ""
+                        currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
+                        scheduleNextAutonomousTrack()
+                        broadcastStatus()
+                    }
+                    return
+                }
+            }
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> {
+                if (finishedMode == MusicStatusPacket.PlayMode.PLAYLIST) {
+                    if (finishedTrack != null) {
+                        userPlaylist.add(finishedReplayTrack ?: finishedTrack)
+                    }
+                    val nextTrack = pollRandomQueuedTrack(finishedReplayTrack ?: finishedTrack)
+                    if (nextTrack != null) {
+                        currentMode = MusicStatusPacket.PlayMode.PLAYLIST
+                        startPlaylistTrack(nextTrack)
+                    } else {
+                        dev.mcrib884.musync.MuSyncLog.info("Track finished, queue empty, scheduling autonomous playback")
+                        broadcastSync(MusicSyncPacket.Action.STOP)
+                        currentTrack = null
+                        currentReplayTrack = null
+                        isPlaying = false
+                        resolvedTrackName = null
+                        specificSound = ""
+                        currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
+                        scheduleNextAutonomousTrack()
+                        broadcastStatus()
+                    }
+                    return
+                }
+                if (finishedTrack != null) {
+                    replayFinishedPrimaryTrack(finishedTrack, finishedMode, finishedSpecific, finishedReplayTrack)
+                    return
+                }
+            }
+            MusicStatusPacket.RepeatMode.OFF -> {}
+        }
+
         val nextTrack = consumeQueuedTrack(ignoreGuard = ignoreQueueGuard)
         if (nextTrack != null) {
             dev.mcrib884.musync.MuSyncLog.info("Track finished, advancing queue to: $nextTrack")
@@ -549,7 +730,10 @@ object MusicManager {
             dev.mcrib884.musync.MuSyncLog.info("Track finished, queue empty, scheduling autonomous playback")
             broadcastSync(MusicSyncPacket.Action.STOP)
             currentTrack = null
+            currentReplayTrack = null
             isPlaying = false
+            resolvedTrackName = null
+            specificSound = ""
             currentMode = MusicStatusPacket.PlayMode.AUTONOMOUS
             scheduleNextAutonomousTrack()
             broadcastStatus()
@@ -562,6 +746,7 @@ object MusicManager {
         }
 
         currentTrack = null
+        currentReplayTrack = null
         trackStartTime = 0
         trackDuration = 0
         isPlaying = false
@@ -897,11 +1082,13 @@ object MusicManager {
         }
 
         currentTrack = null
+        currentReplayTrack = null
         trackStartTime = 0
         trackDuration = 0
         isPlaying = false
         isPaused = false
         pausedPosition = 0
+        finishReportBlockedUntilMs = 0L
         waitingForNextTrack = false
         ticksSinceLastMusic = 0
         nextMusicDelayTicks = 0
@@ -984,7 +1171,7 @@ object MusicManager {
         }
     }
 
-    private fun dimPlayTrack(stream: DimensionStream, trackId: String) {
+    private fun dimPlayTrack(stream: DimensionStream, trackId: String, replayTrackId: String? = null) {
         var actualTrackId: String
         val actualSpecific: String
         if (trackId.contains("|")) {
@@ -1000,14 +1187,22 @@ object MusicManager {
             actualTrackId = canonicalCustomTrackId(actualTrackId) ?: return
         }
 
+        val effectiveReplayTrack = replayTrackId ?: when {
+            actualTrackId.startsWith("custom:", ignoreCase = true) -> actualTrackId
+            actualSpecific.isNotEmpty() -> "$actualTrackId|$actualSpecific"
+            else -> actualTrackId
+        }
+
         stream.track = actualTrackId
+        stream.replayTrack = effectiveReplayTrack
         stream.specific = actualSpecific
         stream.startTime = System.currentTimeMillis()
         stream.duration = 0
         stream.playing = true
         stream.paused = false
+        stream.finishReportBlockedUntilMs = 0L
         stream.waiting = false
-        stream.resolved = if (actualSpecific.isNotEmpty()) actualSpecific else null
+        stream.resolved = if (actualSpecific.isNotEmpty() && !actualSpecific.startsWith("alias:")) actualSpecific else null
         stream.clientEnd = false
         if (actualTrackId.startsWith("custom:")) {
             val server = currentServer()
@@ -1066,8 +1261,10 @@ object MusicManager {
     private fun dimSkipTrack(stream: DimensionStream) {
         if (stream.track != null) broadcastDimSync(stream, MusicSyncPacket.Action.STOP)
         stream.track = null
+        stream.replayTrack = null
         stream.playing = false
         stream.paused = false
+        stream.finishReportBlockedUntilMs = 0L
         broadcastStatus()
         dimPlayNext(stream)
     }
@@ -1075,14 +1272,16 @@ object MusicManager {
     private fun dimSeekTrack(stream: DimensionStream, positionMs: Long) {
         if (stream.track == null || !stream.playing) return
         val clamped = positionMs.coerceIn(0, if (stream.duration > 0) stream.duration else Long.MAX_VALUE)
-        stream.startTime = System.currentTimeMillis() - clamped
+        val now = System.currentTimeMillis()
+        stream.finishReportBlockedUntilMs = now + SEEK_FINISH_GRACE_MS
+        stream.startTime = now - clamped
         if (stream.paused) stream.pausedPos = clamped
         val seekSpecific = if (stream.specific.isNotEmpty()) stream.specific
                            else stream.resolved ?: ""
         val packet = MusicSyncPacket(
             trackId = stream.track!!,
             startPositionMs = clamped,
-            serverTimeMs = System.currentTimeMillis(),
+            serverTimeMs = now,
             action = MusicSyncPacket.Action.SEEK,
             specificSound = seekSpecific
         )
@@ -1143,6 +1342,7 @@ object MusicManager {
     private fun dimOnTrackFinished(stream: DimensionStream) {
         broadcastDimSync(stream, MusicSyncPacket.Action.STOP)
         stream.track = null
+        stream.replayTrack = null
         stream.playing = false
         dimScheduleNext(stream)
         broadcastStatus()
@@ -1513,7 +1713,9 @@ object MusicManager {
     internal fun seekTrack(positionMs: Long) {
         if (currentTrack == null || !isPlaying) return
         val clamped = positionMs.coerceIn(0, if (trackDuration > 0) trackDuration else Long.MAX_VALUE)
-        trackStartTime = System.currentTimeMillis() - clamped
+        val now = System.currentTimeMillis()
+        finishReportBlockedUntilMs = now + SEEK_FINISH_GRACE_MS
+        trackStartTime = now - clamped
         if (isPaused) pausedPosition = clamped
         val track = currentTrack ?: return
         val seekSpecific = if (specificSound.isNotEmpty()) specificSound
@@ -1521,7 +1723,7 @@ object MusicManager {
         val packet = MusicSyncPacket(
             trackId = track,
             startPositionMs = clamped,
-            serverTimeMs = System.currentTimeMillis(),
+            serverTimeMs = now,
             action = MusicSyncPacket.Action.SEEK,
             specificSound = seekSpecific
         )
@@ -1559,12 +1761,13 @@ object MusicManager {
         }
 
         val packet = MusicStatusPacket(
-            currentTrack = if (dimStream != null) dimStream.track else currentTrack,
+            currentTrack = if (dimStream != null) (dimStream.replayTrack ?: dimStream.track) else (currentReplayTrack ?: currentTrack),
             currentPositionMs = currentPosition,
             durationMs = if (dimStream != null) dimStream.duration else trackDuration,
             isPlaying = if (dimStream != null) (dimStream.playing && !dimStream.paused) else (isPlaying && !isPaused),
             queue = userPlaylist.toList(),
             mode = if (dimStream != null) MusicStatusPacket.PlayMode.AUTONOMOUS else currentMode,
+            repeatMode = repeatMode,
             priorityActive = priorityActive,
             resolvedName = if (dimStream != null) (dimStream.resolved ?: "") else (resolvedTrackName ?: ""),
             waitingForNextTrack = if (dimStream != null) dimStream.waiting else waitingForNextTrack,
@@ -1609,7 +1812,7 @@ object MusicManager {
                         stream.playing -> System.currentTimeMillis() - stream.startTime
                         else -> 0L
                     }
-                    trackId = stream.track
+                    trackId = stream.replayTrack ?: stream.track
                     resolved = stream.resolved ?: ""
                     playing = stream.playing && !stream.paused
                     waiting = stream.waiting
@@ -1622,7 +1825,7 @@ object MusicManager {
                         isPlaying && currentTrack != null -> System.currentTimeMillis() - trackStartTime
                         else -> 0L
                     }
-                    trackId = currentTrack
+                    trackId = currentReplayTrack ?: currentTrack
                     resolved = resolvedTrackName ?: ""
                     playing = isPlaying && !isPaused
                     waiting = waitingForNextTrack
@@ -1650,11 +1853,15 @@ object MusicManager {
             MusicClientInfoPacket.Action.REPORT_DURATION -> {
                 if (packet.trackId == currentTrack && packet.durationMs > 0) {
                     trackDuration = packet.durationMs
-                    val needsResync = specificSound.isEmpty() && resolvedTrackName == null && packet.resolvedName.isNotEmpty()
+                    val receivedResolved = packet.resolvedName
+                    if (receivedResolved.isNotEmpty()) {
+                        if (resolvedTrackName == null) resolvedTrackName = receivedResolved
+                        if (specificSound.isEmpty() || specificSound.startsWith("alias:")) specificSound = receivedResolved
+                    }
+                    val needsResync = receivedResolved.isNotEmpty()
                     if (needsResync) {
                         val authority = getAuthorityForPrimary()
                         if (player.uuid == authority) {
-                            resolvedTrackName = packet.resolvedName
                             dev.mcrib884.musync.MuSyncLog.info("Track (authority): ${resolvedTrackName} (${packet.durationMs}ms)")
                             if (isPlaying && !isPaused) {
                                 val position = System.currentTimeMillis() - trackStartTime
@@ -1663,7 +1870,7 @@ object MusicManager {
                                     startPositionMs = position,
                                     serverTimeMs = System.currentTimeMillis(),
                                     action = MusicSyncPacket.Action.PLAY,
-                                    specificSound = resolvedTrackName!!
+                                    specificSound = specificSound
                                 )
                                 val server = currentServer()
                                 if (server != null) {
@@ -1675,10 +1882,9 @@ object MusicManager {
                                 }
                             }
                         } else {
-                            dev.mcrib884.musync.MuSyncLog.debug("Track (non-authority): ${packet.resolvedName} (${packet.durationMs}ms)")
+                            dev.mcrib884.musync.MuSyncLog.debug("Track (non-authority): ${receivedResolved} (${packet.durationMs}ms)")
                         }
                     } else {
-                        if (packet.resolvedName.isNotEmpty() && resolvedTrackName == null) resolvedTrackName = packet.resolvedName
                         dev.mcrib884.musync.MuSyncLog.info("Track: ${resolvedTrackName ?: "?"} (${packet.durationMs}ms)")
                     }
                     broadcastStatus()
@@ -1686,11 +1892,15 @@ object MusicManager {
                     for (stream in dimensionStreams.values) {
                         if (packet.trackId == stream.track && packet.durationMs > 0) {
                             stream.duration = packet.durationMs
-                            val needsResync = stream.specific.isEmpty() && stream.resolved == null && packet.resolvedName.isNotEmpty()
+                            val receivedResolved = packet.resolvedName
+                            if (receivedResolved.isNotEmpty()) {
+                                if (stream.resolved == null) stream.resolved = receivedResolved
+                                if (stream.specific.isEmpty() || stream.specific.startsWith("alias:")) stream.specific = receivedResolved
+                            }
+                            val needsResync = receivedResolved.isNotEmpty()
                             if (needsResync) {
                                 val authority = getAuthorityForDim(stream)
                                 if (player.uuid == authority) {
-                                    stream.resolved = packet.resolvedName
                                     dev.mcrib884.musync.MuSyncLog.info("${stream.dimensionId} track (authority): ${stream.resolved} (${packet.durationMs}ms)")
                                     if (stream.playing && !stream.paused) {
                                         val position = System.currentTimeMillis() - stream.startTime
@@ -1699,7 +1909,7 @@ object MusicManager {
                                             startPositionMs = position,
                                             serverTimeMs = System.currentTimeMillis(),
                                             action = MusicSyncPacket.Action.PLAY,
-                                            specificSound = stream.resolved!!
+                                            specificSound = stream.specific
                                         )
                                         val server = currentServer()
                                         if (server != null) {
@@ -1711,10 +1921,9 @@ object MusicManager {
                                         }
                                     }
                                 } else {
-                                    dev.mcrib884.musync.MuSyncLog.debug("${stream.dimensionId} track (non-authority): ${packet.resolvedName} (${packet.durationMs}ms)")
+                                    dev.mcrib884.musync.MuSyncLog.debug("${stream.dimensionId} track (non-authority): ${receivedResolved} (${packet.durationMs}ms)")
                                 }
                             } else {
-                                if (packet.resolvedName.isNotEmpty() && stream.resolved == null) stream.resolved = packet.resolvedName
                                 dev.mcrib884.musync.MuSyncLog.info("${stream.dimensionId} track: ${stream.resolved ?: "?"} (${packet.durationMs}ms)")
                             }
                             broadcastStatus()
@@ -1730,6 +1939,10 @@ object MusicManager {
                         dev.mcrib884.musync.MuSyncLog.debug("Ignoring TRACK_FINISHED from non-authority ${player.name.string}")
                         return
                     }
+                    if (System.currentTimeMillis() < finishReportBlockedUntilMs) {
+                        dev.mcrib884.musync.MuSyncLog.debug("Ignoring TRACK_FINISHED during seek grace for primary track ${packet.trackId}")
+                        return
+                    }
                     val elapsed = System.currentTimeMillis() - trackStartTime
                     if (elapsed < MIN_VALID_TRACK_FINISH_MS) {
                         dev.mcrib884.musync.MuSyncLog.debug("Ignoring early TRACK_FINISHED for primary track ${packet.trackId} after ${elapsed}ms")
@@ -1743,6 +1956,10 @@ object MusicManager {
                             val dimAuth = getAuthorityForDim(stream)
                             if (dimAuth != null && player.uuid != dimAuth) {
                                 dev.mcrib884.musync.MuSyncLog.debug("Ignoring dim TRACK_FINISHED from non-authority ${player.name.string}")
+                                return
+                            }
+                            if (System.currentTimeMillis() < stream.finishReportBlockedUntilMs) {
+                                dev.mcrib884.musync.MuSyncLog.debug("Ignoring TRACK_FINISHED during seek grace for ${stream.dimensionId} track ${packet.trackId}")
                                 return
                             }
                             val elapsed = System.currentTimeMillis() - stream.startTime
@@ -1791,8 +2008,12 @@ object MusicManager {
 
     fun onServerStopping() {
         currentTrack = null
+        currentReplayTrack = null
         isPlaying = false
         isPaused = false
+        resolvedTrackName = null
+        specificSound = ""
+        finishReportBlockedUntilMs = 0L
         waitingForNextTrack = false
         ticksSinceLastMusic = 0
         currentTrackSession = 0L
@@ -1819,7 +2040,7 @@ object MusicManager {
     }
 
     fun getStatusInfo(): Triple<String, Boolean, List<String>> {
-        return Triple(currentTrack ?: "None", isPlaying && !isPaused, userPlaylist.toList())
+        return Triple(currentReplayTrack ?: currentTrack ?: "None", isPlaying && !isPaused, userPlaylist.toList())
     }
 
     fun getDetailedStatus(): Map<String, Any> {
@@ -1827,7 +2048,7 @@ object MusicManager {
                               else if (currentTrack != null) System.currentTimeMillis() - trackStartTime
                               else 0
         return mapOf(
-            "track" to (currentTrack ?: "None"),
+            "track" to (currentReplayTrack ?: currentTrack ?: "None"),
             "resolvedName" to (resolvedTrackName ?: ""),
             "playing" to (isPlaying && !isPaused),
             "paused" to isPaused,

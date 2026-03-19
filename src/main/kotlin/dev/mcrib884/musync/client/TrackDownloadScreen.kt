@@ -129,7 +129,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
 
             graphics.drawString(font, "Current:", panelX + 14, currentY, 0xFF888888.toInt())
             val nameColor = 0xFF00CCFF.toInt()
-            graphics.drawString(font, "$displayName (${mgr.formatSize(trackSize.toLong())})", panelX + 60, currentY, nameColor)
+            graphics.drawString(font, "$displayName (${mgr.formatSize(trackSize)})", panelX + 60, currentY, nameColor)
 
             val chunkBarY = currentY + 14
             val chunkProgress = if (mgr.currentTrackTotalChunks > 0) {
@@ -172,7 +172,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
             graphics.drawString(font, statusIcon, panelX + 14, y, statusColor)
             graphics.drawString(font, displayName, panelX + 26, y, statusColor)
 
-            val sizeStr = mgr.formatSize(size.toLong())
+            val sizeStr = mgr.formatSize(size)
             val sizeW = font.width(sizeStr)
             graphics.drawString(font, sizeStr, panelX + panelW - 14 - sizeW, y, 0xFF666666.toInt())
         }
@@ -257,7 +257,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
 
             GuiComponent.drawString(poseStack, font, "Current:", panelX + 14, currentY, 0xFF888888.toInt())
             val nameColor = 0xFF00CCFF.toInt()
-            GuiComponent.drawString(poseStack, font, "$displayName (${mgr.formatSize(trackSize.toLong())})", panelX + 60, currentY, nameColor)
+            GuiComponent.drawString(poseStack, font, "$displayName (${mgr.formatSize(trackSize)})", panelX + 60, currentY, nameColor)
 
             val chunkBarY = currentY + 14
             val chunkProgress = if (mgr.currentTrackTotalChunks > 0) {
@@ -300,7 +300,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
             GuiComponent.drawString(poseStack, font, statusIcon, panelX + 14, y, statusColor)
             GuiComponent.drawString(poseStack, font, displayName, panelX + 26, y, statusColor)
 
-            val sizeStr = mgr.formatSize(size.toLong())
+            val sizeStr = mgr.formatSize(size)
             val sizeW = font.width(sizeStr)
             GuiComponent.drawString(poseStack, font, sizeStr, panelX + panelW - 14 - sizeW, y, 0xFF666666.toInt())
         }

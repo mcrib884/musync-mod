@@ -116,6 +116,11 @@ dependencies {
 			}
 		}
 	}
+
+	implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
+	if (loaderPlatform == "fabric") {
+		include("com.googlecode.soundlibs:jlayer:1.0.1.4")
+	}
 }
 if (loaderPlatform == "neoforge") {
 	configurations.all {
@@ -125,6 +130,19 @@ if (loaderPlatform == "neoforge") {
 }
 
 val javaVersion: String by project
+
+val extractJlayer = tasks.register("extractJlayer", Copy::class) {
+	from(provider {
+		val jar = configurations.runtimeClasspath.get().files.find { it.name.startsWith("jlayer-") }
+		if (jar != null) zipTree(jar) else files()
+	}) {
+		exclude("META-INF/**")
+	}
+	into(layout.buildDirectory.dir("classes/java/main"))
+}
+tasks.named("classes") {
+	dependsOn(extractJlayer)
+}
 
 tasks {
 	processResources {

@@ -12,7 +12,8 @@ object PacketIO {
     const val MAX_MANIFEST_ENTRIES = 512
     const val MAX_DIMENSION_ENTRIES = 32
     const val MAX_PLAYERS_PER_DIMENSION = 128
-    const val MAX_TRACK_SIZE_BYTES = 50 * 1024 * 1024
+    // Allow large custom tracks; hard cap is only JVM byte-array/addressing safety.
+    const val MAX_TRACK_SIZE_BYTES = Long.MAX_VALUE
 
     fun writeUtfBounded(buf: FriendlyByteBuf, value: String, maxLength: Int) {
         buf.writeUtf(value, maxLength)

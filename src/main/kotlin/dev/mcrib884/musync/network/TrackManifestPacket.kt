@@ -13,7 +13,7 @@ import java.util.function.Supplier
 
 data class TrackManifestPacket(
     val manifestVersion: Long,
-    val tracks: List<Pair<String, Int>>
+    val tracks: List<Pair<String, Long>>
 //? if neoforge {
 /*) : CustomPacketPayload {
     override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> = TYPE*/
@@ -33,17 +33,17 @@ data class TrackManifestPacket(
             buf.writeInt(packet.tracks.size)
             for ((name, size) in packet.tracks) {
                 PacketIO.writeUtfBounded(buf, name, PacketIO.MAX_TRACK_NAME_LENGTH)
-                buf.writeInt(size)
+                buf.writeLong(size)
             }
         }
 
         fun decode(buf: FriendlyByteBuf): TrackManifestPacket {
             val manifestVersion = buf.readLong()
             val count = buf.readInt().coerceIn(0, PacketIO.MAX_MANIFEST_ENTRIES)
-            val tracks = mutableListOf<Pair<String, Int>>()
+            val tracks = mutableListOf<Pair<String, Long>>()
             for (i in 0 until count) {
                 val name = buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH)
-                val size = buf.readInt().coerceIn(0, PacketIO.MAX_TRACK_SIZE_BYTES)
+                val size = buf.readLong().coerceAtLeast(0L)
                 tracks.add(name to size)
             }
             return TrackManifestPacket(manifestVersion, tracks)

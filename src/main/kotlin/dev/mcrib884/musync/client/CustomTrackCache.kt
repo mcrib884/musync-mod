@@ -1,6 +1,10 @@
 package dev.mcrib884.musync.client
 
 import dev.mcrib884.musync.network.PacketIO
+import net.minecraft.client.Minecraft
+import java.io.File
+import java.io.RandomAccessFile
+import java.util.BitSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.atomic.AtomicLong
@@ -10,7 +14,7 @@ object CustomTrackCache {
     private const val MAX_CACHE_BYTES = 100L * 1024 * 1024
     private const val MAX_ENTRIES = 30
     private const val MAX_PENDING = 5
-    private const val MAX_TOTAL_CHUNKS = 5000
+    private const val MAX_TOTAL_CHUNKS = Int.MAX_VALUE
     private const val PENDING_TIMEOUT_MS = 60_000L
 
     private val cache = ConcurrentHashMap<String, ByteArray>()
@@ -19,13 +23,36 @@ object CustomTrackCache {
 
     private data class PendingTrack(
         val totalChunks: Int,
-        val chunks: MutableMap<Int, ByteArray>,
+        val tempFile: File,
+        val receivedChunks: BitSet,
+        var totalBytes: Long,
         var lastUpdateMs: Long
     )
 
     private val pending = ConcurrentHashMap<String, PendingTrack>()
 
     private fun baseName(name: String): String = name.substringBeforeLast('.', name)
+
+    private fun getPendingFolder(): File {
+        val folder = File(Minecraft.getInstance().gameDirectory, "musynctemp")
+        if (!folder.exists()) folder.mkdirs()
+        return folder
+    }
+
+    private fun sanitizeTempName(name: String): String {
+        return buildString(name.length) {
+            for (ch in name) {
+                append(if (ch.isLetterOrDigit() || ch == '_' || ch == '-' || ch == '.') ch else '_')
+            }
+        }
+    }
+
+    private fun deleteTempFile(file: File?) {
+        if (file == null) return
+        try {
+            if (file.exists()) file.delete()
+        } catch (_: Exception) {}
+    }
 
     fun handleChunk(trackName: String, chunkIndex: Int, totalChunks: Int, data: ByteArray) {
         purgeExpiredPending()
@@ -41,46 +68,52 @@ object CustomTrackCache {
         }
 
         val now = System.currentTimeMillis()
-        val entry = pending.getOrPut(trackName) { PendingTrack(totalChunks, mutableMapOf(), now) }
+        val entry = pending.getOrPut(trackName) {
+            val pendingFile = File(getPendingFolder(), sanitizeTempName(trackName) + ".part")
+            deleteTempFile(pendingFile)
+            PendingTrack(totalChunks, pendingFile, BitSet(totalChunks), 0L, now)
+        }
 
         if (entry.totalChunks != totalChunks) {
             dev.mcrib884.musync.MuSyncLog.warn("Chunk count mismatch for $trackName: expected=${entry.totalChunks} got=$totalChunks")
             pending.remove(trackName)
+            deleteTempFile(entry.tempFile)
             return
         }
 
-        val previous = entry.chunks.put(chunkIndex, data)
+        val chunkOffset = chunkIndex.toLong() * dev.mcrib884.musync.network.CustomTrackDataPacket.CHUNK_SIZE.toLong()
+        try {
+            RandomAccessFile(entry.tempFile, "rw").use { raf ->
+                raf.seek(chunkOffset)
+                raf.write(data)
+            }
+        } catch (e: Exception) {
+            pending.remove(trackName)
+            deleteTempFile(entry.tempFile)
+            ClientTrackManager.onTrackFailed(trackName, "failed to write chunk: ${e.message}")
+            return
+        }
+
+        val previousSize = if (entry.receivedChunks.get(chunkIndex)) data.size.toLong() else 0L
+        entry.receivedChunks.set(chunkIndex)
         entry.lastUpdateMs = now
-        val acceptedBytes = if (previous == null) data.size else (data.size - previous.size).coerceAtLeast(0)
+        entry.totalBytes += (data.size.toLong() - previousSize).coerceAtLeast(0L)
+        val acceptedBytes = (data.size.toLong() - previousSize).coerceAtLeast(0L)
 
         ClientTrackManager.onChunkProgress(trackName, chunkIndex, totalChunks, acceptedBytes)
 
-        if (entry.chunks.size == totalChunks) {
-            val totalSizeLong = entry.chunks.values.sumOf { it.size.toLong() }
-            if (totalSizeLong <= 0L || totalSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES || totalSizeLong > Int.MAX_VALUE.toLong()) {
+        if (entry.receivedChunks.cardinality() == totalChunks) {
+            val totalSizeLong = entry.totalBytes
+            if (totalSizeLong <= 0L || totalSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES) {
                 dev.mcrib884.musync.MuSyncLog.warn("Rejecting assembled track for $trackName due to invalid size: $totalSizeLong")
                 pending.remove(trackName)
+                deleteTempFile(entry.tempFile)
                 ClientTrackManager.onTrackFailed(trackName, "invalid assembled size")
                 return
             }
-            val totalSize = totalSizeLong.toInt()
-            val assembled = ByteArray(totalSize)
-            var offset = 0
-            for (i in 0 until totalChunks) {
-                val chunk = entry.chunks[i]
-                if (chunk == null) {
-                    dev.mcrib884.musync.MuSyncLog.warn("Missing chunk $i/$totalChunks for $trackName during assembly")
-                    pending.remove(trackName)
-                    ClientTrackManager.onTrackFailed(trackName, "missing chunk $i")
-                    return
-                }
-                System.arraycopy(chunk, 0, assembled, offset, chunk.size)
-                offset += chunk.size
-            }
-            putWithEviction(trackName, assembled)
             pending.remove(trackName)
-            ClientTrackManager.onTrackDownloaded(trackName, totalChunks, assembled)
-            dev.mcrib884.musync.MuSyncLog.info("Cached custom track: $trackName (${assembled.size} bytes)")
+            ClientTrackManager.onTrackDownloaded(trackName, totalChunks, entry.tempFile, totalSizeLong)
+            dev.mcrib884.musync.MuSyncLog.info("Assembled custom track to temp file: $trackName ($totalSizeLong bytes)")
         } else {
             dev.mcrib884.musync.MuSyncLog.debug("Received chunk ${chunkIndex + 1}/$totalChunks for $trackName")
         }
@@ -93,6 +126,7 @@ object CustomTrackCache {
             val entry = iterator.next()
             if (entry.value.lastUpdateMs < expireBefore) {
                 dev.mcrib884.musync.MuSyncLog.warn("Expiring incomplete track download: ${entry.key}")
+                deleteTempFile(entry.value.tempFile)
                 iterator.remove()
             }
         }
@@ -136,8 +170,18 @@ object CustomTrackCache {
         putWithEviction(trackName, data)
     }
 
+    @Synchronized
+    fun remove(trackName: String) {
+        val removed = cache.remove(trackName)
+        if (removed != null) {
+            totalCachedBytes.addAndGet(-removed.size.toLong())
+            insertionOrder.remove(trackName)
+        }
+    }
+
     fun clear() {
         cache.clear()
+        pending.values.forEach { deleteTempFile(it.tempFile) }
         pending.clear()
         insertionOrder.clear()
         totalCachedBytes.set(0)

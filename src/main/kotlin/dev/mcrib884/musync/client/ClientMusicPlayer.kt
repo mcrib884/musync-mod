@@ -9,7 +9,9 @@ import net.minecraft.sounds.SoundSource
 import net.minecraft.resources.ResourceLocation
 import org.lwjgl.openal.AL10
 import org.lwjgl.openal.AL11
+import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 
 object ClientMusicPlayer {
         private val loadExecutor = Executors.newSingleThreadExecutor { task ->
@@ -22,6 +24,7 @@ object ClientMusicPlayer {
     private var isPaused: Boolean = false
     private var pausedPosition: Long = 0
     private var playStartTime: Long = 0
+    private var finishCheckBlockedUntilMs: Long = 0
 
     private var currentStatus: MusicStatusPacket? = null
     private var statusReceivedAt: Long = 0L
@@ -39,8 +42,12 @@ object ClientMusicPlayer {
     private var isLoading: Boolean = false
     private var loadingTrack: String? = null
     private var loadingPositionMs: Long = 0
-    private var loadToken: Long = 0
+    private var loadingStartedAtMs: Long = 0
+    @Volatile private var loadToken: Long = 0
+    private var queuedLoadTask: Future<*>? = null
     private var pendingSyncPacket: MusicSyncPacket? = null
+    private const val LOAD_TIMEOUT_MS = 30_000L
+    private const val SEEK_FINISH_GRACE_MS = 750L
 
     private fun syncSourceGain(mc: Minecraft) {
         if (customTrackSource == -1 || inJukeboxRange) return
@@ -59,6 +66,18 @@ object ClientMusicPlayer {
         val resolvedName: String,
         val preparedAudio: CustomTrackPlayer.AudioStream?
     )
+
+    private fun closePreparedLoad(prepared: PreparedLoad?) {
+        val preparedAudio = prepared?.preparedAudio ?: return
+        try {
+            preparedAudio.close()
+        } catch (_: Exception) {}
+    }
+
+    private fun cancelQueuedLoadTask() {
+        queuedLoadTask?.cancel(false)
+        queuedLoadTask = null
+    }
 
     private fun suppressVanillaMusic(mc: Minecraft = Minecraft.getInstance()) {
         mc.soundManager.stop(null, SoundSource.MUSIC)
@@ -141,11 +160,35 @@ object ClientMusicPlayer {
     }
 
     private fun clearLoadingState(cancelCurrentLoad: Boolean, clearPending: Boolean) {
-        if (cancelCurrentLoad) loadToken++
+        if (cancelCurrentLoad) {
+            loadToken++
+            cancelQueuedLoadTask()
+        }
         isLoading = false
         loadingTrack = null
         loadingPositionMs = 0
+        loadingStartedAtMs = 0
         if (clearPending) pendingSyncPacket = null
+    }
+
+    private fun failCurrentLoad(trackIdHint: String? = null) {
+        val failedTrack = currentTrack ?: trackIdHint
+        isLoading = false
+        loadingTrack = null
+        loadingPositionMs = 0
+        loadingStartedAtMs = 0
+        isPlaying = false
+        isPaused = false
+        currentTrack = null
+        pausedPosition = 0
+        if (failedTrack != null) {
+            PacketHandler.sendToServer(MusicClientInfoPacket(
+                action = MusicClientInfoPacket.Action.LOAD_FAILED,
+                trackId = failedTrack,
+                durationMs = 0
+            ))
+        }
+        processDeferredPacketIfReady()
     }
 
     private fun processDeferredPacketIfReady() {
@@ -153,6 +196,17 @@ object ClientMusicPlayer {
         val packet = pendingSyncPacket ?: return
         pendingSyncPacket = null
         handleSyncPacket(packet)
+    }
+
+    private fun getLocalCustomTrackFile(fileName: String): File? {
+        val tracksDir = File(Minecraft.getInstance().gameDirectory, "customtracks")
+        if (!tracksDir.isDirectory) return null
+        val exact = File(tracksDir, fileName)
+        if (exact.isFile) return exact
+        val target = fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+        return tracksDir.listFiles()?.firstOrNull { file ->
+            file.isFile && file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_") == target
+        }
     }
 
     private fun startAsyncLoad(trackId: String, startPositionMs: Long, specificSound: String, startPaused: Boolean) {
@@ -169,134 +223,129 @@ object ClientMusicPlayer {
         isLoading = true
         loadingTrack = trackId
         loadingPositionMs = startPositionMs
+        loadingStartedAtMs = System.currentTimeMillis()
+        cancelQueuedLoadTask()
         val token = ++loadToken
 
         val specific = specificSound
-        loadExecutor.submit {
-            val prepared = if (trackId.startsWith("custom:")) {
-                val fileName = trackId.removePrefix("custom:")
-                val trackData = CustomTrackCache.get(fileName)
-                if (trackData == null) {
-                    dev.mcrib884.musync.MuSyncLog.warn("Custom track data not cached: $fileName")
-                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
-                } else {
-                    PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, CustomTrackPlayer.prepareStream(trackData))
-                }
-            } else {
-                val explicitResolved = if (specific.startsWith("alias:")) {
-                    resolveSoundPathForAlias(trackId, specific.removePrefix("alias:"), mc)
-                } else if (specific.isNotEmpty()) {
-                    if (specific.contains(":")) {
-                        specific.substringBefore(":") to specific.substringAfter(":")
+        queuedLoadTask = loadExecutor.submit {
+            try {
+                val prepared = if (trackId.startsWith("custom:")) {
+                    val fileName = trackId.removePrefix("custom:")
+                    val localFile = getLocalCustomTrackFile(fileName)
+                    val preparedAudio = when {
+                        localFile != null -> CustomTrackPlayer.prepareStream(localFile) { token != loadToken }
+                        else -> CustomTrackCache.get(fileName)?.let { CustomTrackPlayer.prepareStream(it, fileName) { token != loadToken } }
+                    }
+                    if (preparedAudio == null) {
+                        dev.mcrib884.musync.MuSyncLog.warn("Custom track data unavailable: $fileName")
+                        PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
                     } else {
-                        "minecraft" to specific
+                        PreparedLoad(
+                            trackId,
+                            startPositionMs,
+                            specific,
+                            startPaused,
+                            fileName,
+                            preparedAudio
+                        )
                     }
                 } else {
-                    null
+                    val resolved = resolveExactSoundPath(trackId, specific, mc)
+                    val preparedAudio = resolved?.let { CustomTrackPlayer.loadResourceAudio(it.second, it.first) }
+
+                    if (resolved == null || preparedAudio == null) {
+                        dev.mcrib884.musync.MuSyncLog.warn("Failed to resolve sound path for $trackId")
+                        PreparedLoad(trackId, startPositionMs, specific, startPaused, "", null)
+                    } else {
+                        val resolvedName = "${resolved.first}:${resolved.second}"
+                        PreparedLoad(
+                            trackId,
+                            startPositionMs,
+                            specific,
+                            startPaused,
+                            resolvedName,
+                            preparedAudio
+                        )
+                    }
                 }
 
-                var resolved = explicitResolved ?: resolveSoundPath(trackId, mc)
-                var preparedAudio = resolved?.let { CustomTrackPlayer.loadResourceAudio(it.second, it.first) }
+                if (token != loadToken) {
+                    closePreparedLoad(prepared)
+                    return@submit
+                }
 
-                if (resolved == null || preparedAudio == null) {
-                    dev.mcrib884.musync.MuSyncLog.warn("Failed to resolve sound path for $trackId")
-                    PreparedLoad(trackId, startPositionMs, specific, startPaused, "", null)
-                } else {
-                    val resolvedName = "${resolved.first}:${resolved.second}"
-                    PreparedLoad(
-                        trackId,
-                        startPositionMs,
-                        specific,
-                        startPaused,
-                        resolvedName,
-                        preparedAudio
+                mc.execute {
+                    if (token != loadToken) {
+                        closePreparedLoad(prepared)
+                        return@execute
+                    }
+
+                    isLoading = false
+                    loadingTrack = null
+                    loadingPositionMs = 0
+                    loadingStartedAtMs = 0
+
+                    val preparedAudio = prepared.preparedAudio
+                    if (preparedAudio == null) {
+                        dev.mcrib884.musync.MuSyncLog.error("Failed to load track asynchronously: ${prepared.trackId}")
+                        failCurrentLoad(prepared.trackId)
+                        return@execute
+                    }
+
+                    val initialGain = if (inJukeboxRange) {
+                        0.0f
+                    } else {
+                        mc.options.getSoundSourceVolume(SoundSource.MUSIC) *
+                            mc.options.getSoundSourceVolume(SoundSource.MASTER)
+                    }
+                    val source = CustomTrackPlayer.playStream(
+                        preparedAudio,
+                        prepared.startPositionMs,
+                        gain = initialGain,
+                        startPaused = prepared.startPaused
                     )
-                }
-            }
+                    if (source == -1) {
+                        dev.mcrib884.musync.MuSyncLog.error("Failed to start prepared track: ${prepared.resolvedName}")
+                        closePreparedLoad(prepared)
+                        failCurrentLoad(prepared.trackId)
+                        return@execute
+                    }
 
-            mc.execute {
-                if (token != loadToken) return@execute
+                    customTrackSource = source
+                    lastMusicVol = -1f
+                    lastMasterVol = -1f
+                    syncSourceGain(mc)
+                    trackStartTime = System.currentTimeMillis() - prepared.startPositionMs
+                    playStartTime = System.currentTimeMillis()
+                    isPlaying = true
+                    isPaused = prepared.startPaused
+                    if (prepared.startPaused) {
+                        pausedPosition = prepared.startPositionMs
+                    }
 
-                isLoading = false
-                loadingTrack = null
-                loadingPositionMs = 0
+                    dev.mcrib884.musync.MuSyncLog.info(
+                        "Playing: ${prepared.resolvedName}" +
+                            if (prepared.startPositionMs > 0) " (from ${prepared.startPositionMs}ms)" else ""
+                    )
 
-                val preparedAudio = prepared.preparedAudio
-                if (preparedAudio == null) {
-                    dev.mcrib884.musync.MuSyncLog.error("Failed to load track asynchronously: ${prepared.trackId}")
-                    val failedTrack = currentTrack
-                    isPlaying = false
-                    isPaused = false
-                    currentTrack = null
-                    pausedPosition = 0
-                    if (failedTrack != null) {
+                    if (preparedAudio.durationMs > 0) {
                         PacketHandler.sendToServer(MusicClientInfoPacket(
-                            action = MusicClientInfoPacket.Action.LOAD_FAILED,
-                            trackId = failedTrack,
-                            durationMs = 0
+                            action = MusicClientInfoPacket.Action.REPORT_DURATION,
+                            trackId = prepared.trackId,
+                            durationMs = preparedAudio.durationMs,
+                            resolvedName = prepared.resolvedName
                         ))
                     }
+
                     processDeferredPacketIfReady()
-                    return@execute
                 }
-
-                val initialGain = if (inJukeboxRange) {
-                    0.0f
-                } else {
-                    mc.options.getSoundSourceVolume(SoundSource.MUSIC) *
-                        mc.options.getSoundSourceVolume(SoundSource.MASTER)
+            } catch (t: Throwable) {
+                dev.mcrib884.musync.MuSyncLog.error("Async load crashed for $trackId: ${t.message}")
+                mc.execute {
+                    if (token != loadToken) return@execute
+                    failCurrentLoad(trackId)
                 }
-                val source = CustomTrackPlayer.playStream(
-                    preparedAudio,
-                    prepared.startPositionMs,
-                    gain = initialGain,
-                    startPaused = prepared.startPaused
-                )
-                if (source == -1) {
-                    dev.mcrib884.musync.MuSyncLog.error("Failed to start prepared track: ${prepared.resolvedName}")
-                    val failedTrack = currentTrack
-                    isPlaying = false
-                    isPaused = false
-                    currentTrack = null
-                    pausedPosition = 0
-                    if (failedTrack != null) {
-                        PacketHandler.sendToServer(MusicClientInfoPacket(
-                            action = MusicClientInfoPacket.Action.LOAD_FAILED,
-                            trackId = failedTrack,
-                            durationMs = 0
-                        ))
-                    }
-                    processDeferredPacketIfReady()
-                    return@execute
-                }
-
-                customTrackSource = source
-                lastMusicVol = -1f
-                lastMasterVol = -1f
-                syncSourceGain(mc)
-                trackStartTime = System.currentTimeMillis() - prepared.startPositionMs
-                playStartTime = System.currentTimeMillis()
-                isPlaying = true
-                isPaused = prepared.startPaused
-                if (prepared.startPaused) {
-                    pausedPosition = prepared.startPositionMs
-                }
-
-                dev.mcrib884.musync.MuSyncLog.info(
-                    "Playing: ${prepared.resolvedName}" +
-                        if (prepared.startPositionMs > 0) " (from ${prepared.startPositionMs}ms)" else ""
-                )
-
-                if (preparedAudio.durationMs > 0) {
-                    PacketHandler.sendToServer(MusicClientInfoPacket(
-                        action = MusicClientInfoPacket.Action.REPORT_DURATION,
-                        trackId = prepared.trackId,
-                        durationMs = preparedAudio.durationMs,
-                        resolvedName = prepared.resolvedName
-                    ))
-                }
-
-                processDeferredPacketIfReady()
             }
         }
     }
@@ -307,7 +356,24 @@ object ClientMusicPlayer {
 
     private var customTrackSource: Int = -1
 
-    private fun resolveSoundPath(trackId: String, mc: Minecraft): Pair<String, String>? {
+    internal fun resolveExactSoundPath(trackId: String, specificSound: String, mc: Minecraft): Pair<String, String>? {
+        val explicitResolved = if (specificSound.startsWith("alias:")) {
+            resolveSoundPathForAlias(trackId, specificSound.removePrefix("alias:"), mc)
+        } else {
+            if (specificSound.isNotEmpty()) {
+                if (specificSound.contains(":")) {
+                    specificSound.substringBefore(":") to specificSound.substringAfter(":")
+                } else {
+                    "minecraft" to specificSound
+                }
+            } else {
+                null
+            }
+        }
+        return explicitResolved ?: resolveSoundPath(trackId, mc)
+    }
+
+    internal fun resolveSoundPath(trackId: String, mc: Minecraft): Pair<String, String>? {
         val soundLocation = if (trackId.contains(":")) {
             ResourceLocation.tryParse(trackId)
         } else {
@@ -357,7 +423,7 @@ object ClientMusicPlayer {
         return bestResolved
     }
 
-    private fun resolveSoundPathForAlias(trackId: String, alias: String, mc: Minecraft): Pair<String, String>? {
+    internal fun resolveSoundPathForAlias(trackId: String, alias: String, mc: Minecraft): Pair<String, String>? {
         val soundLocation = if (trackId.contains(":")) {
             ResourceLocation.tryParse(trackId)
         } else {
@@ -413,6 +479,7 @@ object ClientMusicPlayer {
         isPlaying = false
         isPaused = false
         pausedPosition = 0
+        finishCheckBlockedUntilMs = 0
         clearLoadingState(cancelCurrentLoad = false, clearPending = true)
         dev.mcrib884.musync.MuSyncLog.info("Music stopped")
     }
@@ -474,11 +541,13 @@ object ClientMusicPlayer {
             playMusic(trackId, positionMs)
             return
         }
-        trackStartTime = System.currentTimeMillis() - positionMs
+        val now = System.currentTimeMillis()
+        finishCheckBlockedUntilMs = now + SEEK_FINISH_GRACE_MS
+        trackStartTime = now - positionMs
         if (isPaused) {
             pausedPosition = positionMs
         }
-        CustomTrackPlayer.seek(customTrackSource, positionMs)
+        CustomTrackPlayer.seek(customTrackSource, positionMs, resume = !isPaused)
         dev.mcrib884.musync.MuSyncLog.info("Seeked in place to ${positionMs}ms")
     }
 
@@ -563,11 +632,22 @@ object ClientMusicPlayer {
             gamePaused = false
         }
 
-        if (isLoading || !isPlaying || isPaused || currentTrack == null) return
+        if (isLoading) {
+            if (loadingStartedAtMs > 0 && System.currentTimeMillis() - loadingStartedAtMs > LOAD_TIMEOUT_MS) {
+                dev.mcrib884.musync.MuSyncLog.error("Track load timed out after ${LOAD_TIMEOUT_MS}ms: ${loadingTrack ?: currentTrack}")
+                clearLoadingState(cancelCurrentLoad = true, clearPending = false)
+                failCurrentLoad()
+            }
+            return
+        }
+
+        if (!isPlaying || isPaused || currentTrack == null) return
 
         if (gamePaused) return
 
         if (System.currentTimeMillis() - playStartTime < 3000L) return
+
+        if (System.currentTimeMillis() < finishCheckBlockedUntilMs) return
 
         if (customTrackSource != -1) {
             if (!CustomTrackPlayer.isPlaying(customTrackSource)) {
@@ -598,9 +678,11 @@ object ClientMusicPlayer {
         pausedPosition = 0
         trackStartTime = 0
         playStartTime = 0
+        finishCheckBlockedUntilMs = 0
         customTrackSource = -1
         gamePaused = false
         currentStatus = null
+        statusReceivedAt = 0L
         musyncActive = false
         inJukeboxRange = false
         jukeboxCheckTicks = 0

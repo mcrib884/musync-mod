@@ -18,6 +18,7 @@ data class MusicStatusPacket(
     val isPlaying: Boolean,
     val queue: List<String>,
     val mode: PlayMode,
+    val repeatMode: RepeatMode = RepeatMode.OFF,
     val priorityActive: Boolean = false,
     val resolvedName: String = "",
     val waitingForNextTrack: Boolean = false,
@@ -50,6 +51,10 @@ data class MusicStatusPacket(
         AUTONOMOUS, PLAYLIST, SINGLE_TRACK
     }
 
+    enum class RepeatMode {
+        OFF, REPEAT_TRACK, REPEAT_PLAYLIST, SHUFFLE, SHUFFLE_REPEAT
+    }
+
     companion object {
         //? if neoforge {
         /*val TYPE = CustomPacketPayload.Type<MusicStatusPacket>(ResourceLocation.fromNamespaceAndPath("musync", "music_status"))
@@ -65,6 +70,7 @@ data class MusicStatusPacket(
             buf.writeBoolean(packet.isPlaying)
             PacketIO.writeUtfList(buf, packet.queue, PacketIO.MAX_TRACK_ID_LENGTH)
             buf.writeEnum(packet.mode)
+            buf.writeEnum(packet.repeatMode)
             buf.writeBoolean(packet.priorityActive)
             PacketIO.writeUtfBounded(buf, packet.resolvedName, PacketIO.MAX_SOUND_ID_LENGTH)
             buf.writeBoolean(packet.waitingForNextTrack)
@@ -97,6 +103,7 @@ data class MusicStatusPacket(
                 isPlaying = buf.readBoolean(),
                 queue = PacketIO.readUtfList(buf, PacketIO.MAX_QUEUE_ENTRIES, PacketIO.MAX_TRACK_ID_LENGTH),
                 mode = buf.readEnum(PlayMode::class.java),
+                repeatMode = buf.readEnum(RepeatMode::class.java),
                 priorityActive = buf.readBoolean(),
                 resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH),
                 waitingForNextTrack = buf.readBoolean(),

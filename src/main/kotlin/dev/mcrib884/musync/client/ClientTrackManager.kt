@@ -1,17 +1,20 @@
 package dev.mcrib884.musync.client
 
+import dev.mcrib884.musync.network.PacketIO
 import dev.mcrib884.musync.network.PacketHandler
 import dev.mcrib884.musync.network.TrackRequestPacket
 import net.minecraft.client.Minecraft
 import java.io.File
+import java.util.Locale
 
 object ClientTrackManager {
 
-    private val SAFE_INTERNAL_NAME = Regex("^[a-z0-9_\\-]+\\.(ogg|wav)$")
+    private val SAFE_INTERNAL_NAME = Regex("^[\\p{L}\\p{N}_\\-]+\\.(ogg|wav|mp3)$")
+    private val SUPPORTED_EXTENSIONS = setOf("ogg", "wav", "mp3")
     private const val MAX_TRACKS_PER_REQUEST = 3
 
     private fun normalizeInternalName(name: String): String? {
-        val normalized = name.lowercase().replace(" ", "_")
+        val normalized = name.lowercase(Locale.ROOT).replace(" ", "_")
         if (!SAFE_INTERNAL_NAME.matches(normalized)) {
             dev.mcrib884.musync.MuSyncLog.warn("Rejected unsafe track name: $name")
             return null
@@ -23,10 +26,10 @@ object ClientTrackManager {
         return internalName.substringBeforeLast(".")
     }
 
-    private var serverManifest: List<Pair<String, Int>> = emptyList()
+    private var serverManifest: List<Pair<String, Long>> = emptyList()
     private var serverManifestVersion: Long = -1L
 
-    var tracksToDownload: List<Pair<String, Int>> = emptyList()
+    var tracksToDownload: List<Pair<String, Long>> = emptyList()
         private set
 
     var currentDownloadIndex: Int = 0
@@ -110,23 +113,30 @@ object ClientTrackManager {
     private fun scanFolderTracks(folder: File): Map<String, File> {
         if (!folder.exists()) return emptyMap()
 
-        val supportedExtensions = setOf("ogg", "wav")
         return folder.listFiles { f ->
-            f.isFile && f.extension.lowercase() in supportedExtensions
+            f.isFile && f.extension.lowercase() in SUPPORTED_EXTENSIONS
         }?.mapNotNull { file ->
             val key = normalizeInternalName(file.name) ?: return@mapNotNull null
             key to file
         }?.toMap() ?: emptyMap()
     }
 
-    private fun scanLocalTracks(): Map<String, Int> {
+    private fun scanLocalTracks(): Map<String, Long> {
         val folder = getLocalFolder().apply {
             if (!exists()) mkdirs()
         }
-        return scanFolderTracks(folder).mapValues { it.value.length().toInt() }
+        return scanFolderTracks(folder).mapNotNull { (name, file) ->
+            val size = file.length()
+            if (size <= 0L || size > PacketIO.MAX_TRACK_SIZE_BYTES) {
+                dev.mcrib884.musync.MuSyncLog.warn("Ignoring local custom track with invalid size: ${file.name} ($size bytes)")
+                null
+            } else {
+                name to size
+            }
+        }.toMap()
     }
 
-    fun handleManifest(manifestVersion: Long, manifest: List<Pair<String, Int>>) {
+    fun handleManifest(manifestVersion: Long, manifest: List<Pair<String, Long>>) {
         ensureSettingsLoaded()
         serverManifest = manifest
         serverManifestVersion = manifestVersion
@@ -136,7 +146,7 @@ object ClientTrackManager {
         val cacheFolder = if (cacheEnabled) getCacheFolder() else null
         val cachedTracks = if (cacheFolder != null && cacheFolder.exists()) scanFolderTracks(cacheFolder) else emptyMap()
 
-        val missing = mutableListOf<Pair<String, Int>>()
+        val missing = mutableListOf<Pair<String, Long>>()
         for ((name, serverSize) in manifest) {
             val internalName = normalizeInternalName(name)
             if (internalName == null) {
@@ -147,7 +157,10 @@ object ClientTrackManager {
             if (localSize != null && localSize == serverSize) continue
 
             if (cacheFolder != null && cacheFolder.exists()) {
-                val cached = cachedTracks[internalName]?.takeIf { it.length().toInt() == serverSize }
+                val cached = cachedTracks[internalName]?.takeIf {
+                    val cachedSize = it.length()
+                    cachedSize > 0L && cachedSize <= PacketIO.MAX_TRACK_SIZE_BYTES && cachedSize == serverSize
+                }
                 if (cached != null) {
                     try {
                         val localFolder = getLocalFolder()
@@ -175,7 +188,6 @@ object ClientTrackManager {
             pendingRequested.clear()
             lastProgressAtMs = 0L
             dev.mcrib884.musync.MuSyncLog.info("All ${manifest.size} custom tracks are synced")
-            cacheAllLocalTracks(manifest)
             isDownloading = false
             downloadComplete = failedTracks.isEmpty()
             return
@@ -185,7 +197,7 @@ object ClientTrackManager {
         currentDownloadIndex = 0
         currentTrackChunksReceived = 0
         currentTrackTotalChunks = 0
-        totalBytesToDownload = missing.sumOf { it.second.toLong() }
+        totalBytesToDownload = missing.sumOf { it.second }
         totalBytesReceived = 0
         isDownloading = true
         downloadComplete = false
@@ -216,7 +228,7 @@ object ClientTrackManager {
         PacketHandler.sendToServer(TrackRequestPacket(serverManifestVersion, requestNames))
     }
 
-    fun onChunkProgress(trackName: String, chunkIndex: Int, totalChunks: Int, acceptedBytes: Int) {
+    fun onChunkProgress(trackName: String, chunkIndex: Int, totalChunks: Int, acceptedBytes: Long) {
         if (!isDownloading) return
         if (currentDownloadIndex !in tracksToDownload.indices) return
         if (tracksToDownload[currentDownloadIndex].first != trackName) return
@@ -224,16 +236,23 @@ object ClientTrackManager {
         lastProgressAtMs = System.currentTimeMillis()
         currentTrackTotalChunks = totalChunks
         currentTrackChunksReceived = chunkIndex + 1
-        totalBytesReceived += acceptedBytes.toLong()
+        totalBytesReceived += acceptedBytes
     }
 
-    fun onTrackDownloaded(trackName: String, totalChunks: Int, data: ByteArray) {
+    fun onTrackDownloaded(trackName: String, totalChunks: Int, tempFile: File, totalSize: Long) {
         if (!isDownloading) return
 
-        val saved = saveTrackToDisk(trackName, data)
-        if (!saved) {
-            failedTracks.add(trackName)
-            dev.mcrib884.musync.MuSyncLog.warn("Track marked failed and skipped: $trackName")
+        try {
+            val saved = saveTrackToDisk(trackName, tempFile, totalSize)
+            CustomTrackCache.remove(trackName)
+            if (!saved) {
+                failedTracks.add(trackName)
+                dev.mcrib884.musync.MuSyncLog.warn("Track marked failed and skipped: $trackName")
+            }
+        } finally {
+            try {
+                if (tempFile.exists()) tempFile.delete()
+            } catch (_: Exception) {}
         }
         pendingRequested.remove(trackName)
 
@@ -290,10 +309,6 @@ object ClientTrackManager {
             }
         }
 
-        java.util.concurrent.CompletableFuture.runAsync {
-            cacheAllLocalTracks(serverManifest)
-        }
-
         Minecraft.getInstance().execute {
             val screen = Minecraft.getInstance().screen
             if (screen is TrackDownloadScreen) {
@@ -345,37 +360,34 @@ object ClientTrackManager {
         }
     }
 
-    private fun saveTrackToDisk(trackName: String, data: ByteArray): Boolean {
+    private fun saveTrackToDisk(trackName: String, sourceFile: File, totalSize: Long): Boolean {
         val safeName = normalizeInternalName(trackName)
         if (safeName == null) {
             dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track with unsafe name: $trackName")
+            return false
+        }
+        if (!sourceFile.isFile || totalSize <= 0L || sourceFile.length() != totalSize) {
+            dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track with invalid temp file: $trackName")
             return false
         }
         try {
             val folder = getLocalFolder()
             if (!folder.exists()) folder.mkdirs()
 
-            val expectedExtension = safeName.substringAfterLast('.', "")
-            val extension = if (data.size >= 4) {
-                val magic = String(data, 0, 4, Charsets.US_ASCII)
-                when {
-                    magic == "RIFF" -> "wav"
-                    magic == "OggS" -> "ogg"
-                    else -> ""
-                }
-            } else ""
-            if (extension.isEmpty() || extension != expectedExtension) {
-                dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track due to extension/content mismatch: $trackName")
+            val stream = CustomTrackPlayer.prepareStream(sourceFile)
+            if (stream == null) {
+                dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track because content is not decodable: $trackName")
                 return false
             }
+            stream.close()
 
             val file = File(folder, safeName)
-            if (!isInsideFolder(file, folder)) {
+            if (file.isDirectory) {
                 dev.mcrib884.musync.MuSyncLog.error("Path traversal detected for track: $trackName")
                 return false
             }
-            file.writeBytes(data)
-            dev.mcrib884.musync.MuSyncLog.info("Saved custom track to disk: ${file.name} (${data.size} bytes)")
+            sourceFile.copyTo(file, overwrite = true)
+            dev.mcrib884.musync.MuSyncLog.info("Saved custom track to disk: ${file.name} ($totalSize bytes)")
 
             if (cacheEnabled) {
                 try {
@@ -383,8 +395,8 @@ object ClientTrackManager {
                     if (!cf.exists()) cf.mkdirs()
                     val cacheFile = File(cf, safeName)
                     if (isInsideFolder(cacheFile, cf)) {
-                        cacheFile.writeBytes(data)
-                        dev.mcrib884.musync.MuSyncLog.info("Saved custom track to cache: ${cacheFile.name} (${data.size} bytes)")
+                        sourceFile.copyTo(cacheFile, overwrite = true)
+                        dev.mcrib884.musync.MuSyncLog.info("Saved custom track to cache: ${cacheFile.name} ($totalSize bytes)")
                     }
                 } catch (e2: Exception) {
                     dev.mcrib884.musync.MuSyncLog.error("Failed to cache track $trackName: ${e2.message}")
@@ -405,42 +417,16 @@ object ClientTrackManager {
         }
     }
 
-    private fun cacheAllLocalTracks(manifest: List<Pair<String, Int>>) {
-        val folder = getLocalFolder()
-        if (!folder.exists()) return
-
-        val supportedExtensions = setOf("ogg", "wav")
-        val audioFiles = folder.listFiles { f ->
-            f.isFile && f.extension.lowercase() in supportedExtensions
-        } ?: return
-
-        val serverTrackNames = manifest.mapNotNull { normalizeInternalName(it.first) }.toSet()
-
-        for (file in audioFiles) {
-            val internalName = normalizeInternalName(file.name) ?: continue
-
-            if (internalName in serverTrackNames && !CustomTrackCache.has(internalName)) {
-                try {
-                    val bytes = file.readBytes()
-                    CustomTrackCache.put(internalName, bytes)
-                    dev.mcrib884.musync.MuSyncLog.info("Cached local track: $internalName (${bytes.size} bytes)")
-                } catch (e: Exception) {
-                    dev.mcrib884.musync.MuSyncLog.error("Failed to cache local track $internalName: ${e.message}")
-                }
-            }
-        }
-    }
-
     fun currentTrackName(): String {
         return if (currentDownloadIndex in tracksToDownload.indices) {
             displayTrackName(tracksToDownload[currentDownloadIndex].first)
         } else ""
     }
 
-    fun currentTrackSize(): Int {
+    fun currentTrackSize(): Long {
         return if (currentDownloadIndex in tracksToDownload.indices) {
             tracksToDownload[currentDownloadIndex].second
-        } else 0
+        } else 0L
     }
 
     fun reset() {

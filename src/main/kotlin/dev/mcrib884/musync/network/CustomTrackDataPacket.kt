@@ -24,7 +24,7 @@ data class CustomTrackDataPacket(
 //?}
     companion object {
         const val CHUNK_SIZE = 32 * 1024
-        private const val MAX_TOTAL_CHUNKS = 5000
+        private const val MAX_TOTAL_CHUNKS = Int.MAX_VALUE
 
         //? if neoforge {
         /*val TYPE = CustomPacketPayload.Type<CustomTrackDataPacket>(ResourceLocation.fromNamespaceAndPath("musync", "custom_track_data"))

@@ -134,7 +134,7 @@ object TrackNames {
 
     fun formatOggName(oggPath: String): String {
         val cleanPath = if (oggPath.contains(":")) oggPath.substringAfter(":") else oggPath
-        if (!cleanPath.contains("/") && (cleanPath.endsWith(".ogg") || cleanPath.endsWith(".wav"))) {
+        if (!cleanPath.contains("/") && (cleanPath.endsWith(".ogg") || cleanPath.endsWith(".wav") || cleanPath.endsWith(".mp3"))) {
             return formatCustomTrackName(cleanPath)
         }
         return OGG_NAMES[cleanPath]

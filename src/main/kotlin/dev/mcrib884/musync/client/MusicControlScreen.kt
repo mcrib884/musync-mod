@@ -23,6 +23,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     private var lastSeekTimeMs: Long = 0
     private val SEEK_COOLDOWN_MS = 500L
+    private var draggingSeekBar = false
+    private var dragSeekProgress: Float = 0f
     private var panelX = 0
     private var panelY = 0
     private val barH = 8
@@ -47,6 +49,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var playlistNavBounds: BtnBounds? = null
     private var tracksNavBounds: BtnBounds? = null
     private var cacheBtnBounds: BtnBounds? = null
+    private var repeatBtnBounds: BtnBounds? = null
     private var minDelayField: EditBox? = null
     private var maxDelayField: EditBox? = null
     private var minFieldX = 0
@@ -72,6 +75,20 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         return if (ClientOnlyController.isActive) ClientOnlyController.getStatus() else ClientMusicPlayer.getCurrentStatus()
     }
 
+    private fun effectiveRepeatMode(): MusicStatusPacket.RepeatMode {
+        return effectiveStatus()?.repeatMode ?: MusicStatusPacket.RepeatMode.OFF
+    }
+
+    private fun repeatModeLabel(mode: MusicStatusPacket.RepeatMode): String {
+        return when (mode) {
+            MusicStatusPacket.RepeatMode.OFF -> "Repeat: Off"
+            MusicStatusPacket.RepeatMode.REPEAT_TRACK -> "Repeat: Track"
+            MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> "Repeat: Playlist"
+            MusicStatusPacket.RepeatMode.SHUFFLE -> "Shuffle"
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> "Shuffle + Repeat"
+        }
+    }
+
     override fun init() {
         super.init()
         panelX = (width - panelW) / 2
@@ -90,6 +107,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         stopBounds = BtnBounds(btnStartX, btnY, btnW, btnH, "\u25A0 Stop", op)
         pauseBounds = BtnBounds(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, "\u23F8 Pause", op)
         skipBounds = BtnBounds(btnStartX + (btnW + btnSpacing) * 2, btnY, btnW, btnH, "\u23ED Skip", op)
+        repeatBtnBounds = BtnBounds(panelX + panelW - 22, btnY, 16, 16, "")
 
         val delayY = panelY + 150
         val delayBoxW = 50
@@ -253,13 +271,16 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.drawCenteredString(font, statusText, cx, panelY + 52, statusColor)
         drawVolumeBar(graphics, volumeBarX, volumeBarY, volumeBarW, volumeBarH)
 
-        val progress = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
+        val actualProgress = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
+        val progress = if (draggingSeekBar) dragSeekProgress else actualProgress
         val filledW = (barW * progress).toInt()
 
         graphics.fill(barX, barY, barX + barW, barY + barH, 0xFF222244.toInt())
         if (filledW > 0) {
-            graphics.fill(barX, barY, barX + filledW, barY + barH, 0xFF00CC66.toInt())
-            graphics.fill(barX, barY, barX + filledW, barY + barH / 2, 0xFF00EE88.toInt())
+            val barColor = if (draggingSeekBar) 0xFF33AAFF.toInt() else 0xFF00CC66.toInt()
+            val barHighlight = if (draggingSeekBar) 0xFF55CCFF.toInt() else 0xFF00EE88.toInt()
+            graphics.fill(barX, barY, barX + filledW, barY + barH, barColor)
+            graphics.fill(barX, barY, barX + filledW, barY + barH / 2, barHighlight)
         }
         graphics.fill(barX - 1, barY - 1, barX + barW + 1, barY, 0xFF333355.toInt())
         graphics.fill(barX - 1, barY + barH, barX + barW + 1, barY + barH + 1, 0xFF333355.toInt())
@@ -268,17 +289,19 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         if (filledW > 0 && displayDuration > 0) {
             val headX = barX + filledW
-            graphics.fill(headX - 1, barY - 1, headX + 1, barY + barH + 1, 0xFFFFFFFF.toInt())
+            graphics.fill(headX - 1, barY - 2, headX + 1, barY + barH + 2, 0xFFFFFFFF.toInt())
         }
 
+        val shownPosition = if (draggingSeekBar && displayDuration > 0) (dragSeekProgress * displayDuration).toLong() else displayPosition
         val timeText = if (displayTrack != null) {
-            val posStr = formatTime(displayPosition)
+            val posStr = formatTime(shownPosition)
             val durStr = if (displayDuration > 0) formatTime(displayDuration) else "--:--"
             "$posStr / $durStr"
         } else {
             "0:00 / 0:00"
         }
-        graphics.drawCenteredString(font, timeText, cx, barY + barH + 3, 0xFF999999.toInt())
+        val timeColor = if (draggingSeekBar) 0xFF55CCFF.toInt() else 0xFF999999.toInt()
+        graphics.drawCenteredString(font, timeText, cx, barY + barH + 3, timeColor)
 
         pauseIsPlaying = displayIsPlaying
         val pauseLabel = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
@@ -325,6 +348,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             val indicatorY = b.y + (b.h - 6) / 2
             drawCacheIndicator(graphics, indicatorX, indicatorY, 6, cacheEnabled, cacheLabelColor)
             graphics.drawString(font, cacheLabel, indicatorX + 10, b.y + (b.h - 8) / 2, cacheLabelColor)
+        }
+
+        repeatBtnBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawRepeatBtn(graphics, b.x, b.y, b.w, b.h, hov)
         }
 
         val modeText = when (status?.mode) {
@@ -508,13 +536,34 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
         pauseIsPlaying = displayIsPlaying
         val pauseLbl1919 = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
-        pauseBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, pauseLbl1919, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        stopBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        skipBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        applyBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        resetBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        playlistNavBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
-        tracksNavBounds?.let { b -> drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h, b.active) }
+        pauseBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, pauseLbl1919, hov, b.active)
+        }
+        stopBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        skipBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        applyBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        resetBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        playlistNavBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        tracksNavBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
         cacheBtnBounds?.let { b ->
             val hovC = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
             val bgC = if (hovC) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
@@ -532,11 +581,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             GuiComponent.drawString(poseStack, font, cacheLbl, indicatorX + 10, b.y + (b.h - 8) / 2, cacheTxtColor)
         }
 
-        val modeText = when (status?.mode) {
-            MusicStatusPacket.PlayMode.AUTONOMOUS -> "Auto"
-            MusicStatusPacket.PlayMode.PLAYLIST -> "Playlist"
-            MusicStatusPacket.PlayMode.SINGLE_TRACK -> "Single"
-            else -> "---"
+        repeatBtnBounds?.let { b ->
+            val hovR = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawRepeatBtn1919(poseStack, b.x, b.y, b.w, b.h, hovR)
+        }
+
+        val modeText = when (effectiveRepeatMode()) {
+            MusicStatusPacket.RepeatMode.OFF -> "Off"
+            MusicStatusPacket.RepeatMode.REPEAT_TRACK -> "Track"
+            MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> "Playlist"
+            MusicStatusPacket.RepeatMode.SHUFFLE -> "Shuffle"
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> "Shuffle + Repeat"
         }
         GuiComponent.drawCenteredString(poseStack, font, "Mode: $modeText", cx, panelY + 128, 0xFF666688.toInt())
 
@@ -583,6 +638,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
         if (mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize) {
             renderTooltip(poseStack, Component.literal("Hotload custom tracks"), mouseX, mouseY)
+        }
+        repeatBtnBounds?.let { b ->
+            if (mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) {
+                val rLabel = repeatModeLabel(effectiveRepeatMode())
+                renderTooltip(poseStack, Component.literal(rLabel), mouseX, mouseY)
+            }
         }
         if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) {
             val dimSt1919 = status?.activeDimensions?.find { it.id == viewedDimId }
@@ -646,25 +707,14 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (button == 0 && cacheBtnBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h } == true) {
             ClientTrackManager.setCacheEnabled(!ClientTrackManager.cacheEnabled); return true
         }
-        if (isOp && button == 0 && mouseX >= barX && mouseX <= barX + barW && mouseY >= barY - 2 && mouseY <= barY + barH + 2) {
-            val now = System.currentTimeMillis()
-            if (now - lastSeekTimeMs < SEEK_COOLDOWN_MS) return true
+        if (button == 0 && repeatBtnBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h } == true) {
+            sendControl(MusicControlPacket.Action.CYCLE_REPEAT_MODE)
+            return true
+        }
+        if (isOp && button == 0 && mouseX >= barX && mouseX <= barX + barW && mouseY >= barY - 4 && mouseY <= barY + barH + 4) {
             if (displayedHasTrack && displayedDuration > 0) {
-                val clickProgress = ((mouseX - barX) / barW).coerceIn(0.0, 1.0)
-                val seekMs = (clickProgress * displayedDuration).toLong()
-                if (ClientOnlyController.isActive) {
-                    ClientOnlyController.seek(seekMs)
-                } else {
-                    val packet = MusicControlPacket(
-                        action = MusicControlPacket.Action.SEEK,
-                        trackId = null,
-                        queuePosition = null,
-                        seekMs = seekMs,
-                        targetDim = viewedDimId
-                    )
-                    PacketHandler.sendToServer(packet)
-                }
-                lastSeekTimeMs = now
+                draggingSeekBar = true
+                dragSeekProgress = ((mouseX - barX) / barW).toFloat().coerceIn(0f, 1f)
                 return true
             }
         }
@@ -690,12 +740,35 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             setMusicVolumeFromMouse(mouseY)
             return true
         }
+        if (draggingSeekBar && button == 0) {
+            dragSeekProgress = ((mouseX - barX) / barW).toFloat().coerceIn(0f, 1f)
+            return true
+        }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
     }
 
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && draggingVolume) {
             draggingVolume = false
+            return true
+        }
+        if (button == 0 && draggingSeekBar) {
+            draggingSeekBar = false
+            if (displayedHasTrack && displayedDuration > 0) {
+                val seekMs = (dragSeekProgress * displayedDuration).toLong()
+                if (ClientOnlyController.isActive) {
+                    ClientOnlyController.seek(seekMs)
+                } else {
+                    val packet = MusicControlPacket(
+                        action = MusicControlPacket.Action.SEEK,
+                        trackId = null,
+                        queuePosition = null,
+                        seekMs = seekMs,
+                        targetDim = viewedDimId
+                    )
+                    PacketHandler.sendToServer(packet)
+                }
+            }
             return true
         }
         return super.mouseReleased(mouseX, mouseY, button)
@@ -737,6 +810,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 MusicControlPacket.Action.PAUSE -> ClientOnlyController.pause()
                 MusicControlPacket.Action.RESUME -> ClientOnlyController.resume()
                 MusicControlPacket.Action.SKIP -> ClientOnlyController.skip()
+                MusicControlPacket.Action.CYCLE_REPEAT_MODE -> ClientOnlyController.cycleRepeatMode()
                 MusicControlPacket.Action.SET_DELAY -> {
                     if (trackId == "reset") {
                         ClientOnlyController.resetDelay()
@@ -787,6 +861,82 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         graphics.fill(x, y + h - 1, x + w, y + h, borderColor)
         graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
     }
+
+    //? if >=1.20 {
+    private fun drawRepeatBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, hovered: Boolean) {
+        val mode = effectiveRepeatMode()
+        val active = mode != MusicStatusPacket.RepeatMode.OFF
+        val bg = when { hovered -> 0xFF334433.toInt(); active -> 0xFF1C2C1C.toInt(); else -> 0xFF1C1C2A.toInt() }
+        val border = if (active) 0xFF00CC66.toInt() else 0xFF333355.toInt()
+        graphics.fill(x, y, x + w, y + h, bg)
+        graphics.fill(x, y, x + w, y + 1, border)
+        graphics.fill(x, y, x + 1, y + h, border)
+        graphics.fill(x + w - 1, y, x + w, y + h, border)
+        graphics.fill(x, y + h - 1, x + w, y + h, border)
+        val iconColor = if (active) 0xFF00EE88.toInt() else 0xFF888899.toInt()
+        val cx = x + w / 2
+        val cy = y + h / 2
+        when (mode) {
+            MusicStatusPacket.RepeatMode.OFF -> {
+                // Right arrow: normal "play next" behavior
+                graphics.fill(cx - 3, cy - 1, cx + 2, cy + 2, iconColor)
+                graphics.fill(cx + 2, cy - 2, cx + 3, cy + 3, iconColor)
+                graphics.fill(cx + 3, cy - 1, cx + 4, cy + 2, iconColor)
+                graphics.fill(cx + 4, cy, cx + 5, cy + 1, iconColor)
+            }
+            MusicStatusPacket.RepeatMode.REPEAT_TRACK -> {
+                // Loop arrow with "1" dot inside
+                graphics.fill(cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
+                graphics.fill(cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
+                graphics.fill(cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
+                graphics.fill(cx - 4, cy - 1, cx - 3, cy + 3, iconColor)
+                graphics.fill(cx - 5, cy - 2, cx - 4, cy - 1, iconColor)
+                graphics.fill(cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
+                // "1" indicator
+                graphics.fill(cx, cy - 1, cx + 1, cy + 1, iconColor)
+                graphics.fill(cx - 1, cy - 1, cx, cy, iconColor)
+            }
+            MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> {
+                // Loop arrow without dot
+                graphics.fill(cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
+                graphics.fill(cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
+                graphics.fill(cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
+                graphics.fill(cx - 4, cy - 1, cx - 3, cy + 3, iconColor)
+                graphics.fill(cx - 5, cy - 2, cx - 4, cy - 1, iconColor)
+                graphics.fill(cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
+            }
+            MusicStatusPacket.RepeatMode.SHUFFLE -> {
+                // Crossed arrows
+                graphics.fill(cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
+                graphics.fill(cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
+                graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
+                graphics.fill(cx + 1, cy + 1, cx + 2, cy + 2, iconColor)
+                graphics.fill(cx + 2, cy + 2, cx + 4, cy + 3, iconColor)
+                graphics.fill(cx - 4, cy + 2, cx - 3, cy + 3, iconColor)
+                graphics.fill(cx - 3, cy + 1, cx - 2, cy + 2, iconColor)
+                graphics.fill(cx + 1, cy - 2, cx + 2, cy - 1, iconColor)
+                graphics.fill(cx + 2, cy - 3, cx + 4, cy - 2, iconColor)
+                graphics.fill(cx + 4, cy - 4, cx + 5, cy - 1, iconColor)
+                graphics.fill(cx + 4, cy + 1, cx + 5, cy + 4, iconColor)
+            }
+            MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> {
+                // Crossed arrows + center dot
+                graphics.fill(cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
+                graphics.fill(cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
+                graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
+                graphics.fill(cx + 1, cy + 1, cx + 2, cy + 2, iconColor)
+                graphics.fill(cx + 2, cy + 2, cx + 4, cy + 3, iconColor)
+                graphics.fill(cx - 4, cy + 2, cx - 3, cy + 3, iconColor)
+                graphics.fill(cx - 3, cy + 1, cx - 2, cy + 2, iconColor)
+                graphics.fill(cx + 1, cy - 2, cx + 2, cy - 1, iconColor)
+                graphics.fill(cx + 2, cy - 3, cx + 4, cy - 2, iconColor)
+                graphics.fill(cx + 4, cy - 4, cx + 5, cy - 1, iconColor)
+                graphics.fill(cx + 4, cy + 1, cx + 5, cy + 4, iconColor)
+                graphics.fill(cx, cy - 1, cx + 1, cy + 1, iconColor)
+            }
+        }
+    }
+    //?}
 
     private fun drawHotloadIcon(graphics: GuiGraphics, x: Int, y: Int, color: Int) {
         graphics.fill(x + 6, y + 2, x + 8, y + 8, color)
@@ -906,6 +1056,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize) {
             graphics.renderTooltip(font, listOf(Component.literal("Hotload custom tracks").visualOrderText), mouseX, mouseY)
         }
+        repeatBtnBounds?.let { b ->
+            if (mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) {
+                val label = repeatModeLabel(effectiveRepeatMode())
+                graphics.renderTooltip(font, listOf(Component.literal(label).visualOrderText), mouseX, mouseY)
+            }
+        }
         if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) {
             val dimSt = status?.activeDimensions?.find { it.id == viewedDimId }
             val players = dimSt?.players ?: emptyList()
@@ -1015,6 +1171,75 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.fill(poseStack, x, y + size - 1, x + size, y + size, color)
         if (filled && size > 2) {
             GuiComponent.fill(poseStack, x + 1, y + 1, x + size - 1, y + size - 1, color)
+        }
+    }
+
+    private fun drawRepeatBtn1919(poseStack: PoseStack, x: Int, y: Int, w: Int, h: Int, hovered: Boolean) {
+        val rMode = ClientOnlyController.repeatMode
+        val active = rMode != ClientOnlyController.RepeatMode.OFF
+        val bg = when { hovered -> 0xFF334433.toInt(); active -> 0xFF1C2C1C.toInt(); else -> 0xFF1C1C2A.toInt() }
+        val border = if (active) 0xFF00CC66.toInt() else 0xFF333355.toInt()
+        GuiComponent.fill(poseStack, x, y, x + w, y + h, bg)
+        GuiComponent.fill(poseStack, x, y, x + w, y + 1, border)
+        GuiComponent.fill(poseStack, x, y, x + 1, y + h, border)
+        GuiComponent.fill(poseStack, x + w - 1, y, x + w, y + h, border)
+        GuiComponent.fill(poseStack, x, y + h - 1, x + w, y + h, border)
+        val iconColor = if (active) 0xFF00EE88.toInt() else 0xFF888899.toInt()
+        val cx = x + w / 2
+        val cy = y + h / 2
+        when (rMode) {
+            ClientOnlyController.RepeatMode.OFF -> {
+                GuiComponent.fill(poseStack, cx - 3, cy - 1, cx + 2, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 2, cy - 2, cx + 3, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx + 3, cy - 1, cx + 4, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 4, cy, cx + 5, cy + 1, iconColor)
+            }
+            ClientOnlyController.RepeatMode.REPEAT_TRACK -> {
+                GuiComponent.fill(poseStack, cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 4, cy - 1, cx - 3, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 5, cy - 2, cx - 4, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
+                GuiComponent.fill(poseStack, cx, cy - 1, cx + 1, cy + 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 1, cy - 1, cx, cy, iconColor)
+            }
+            ClientOnlyController.RepeatMode.REPEAT_PLAYLIST -> {
+                GuiComponent.fill(poseStack, cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 4, cy - 1, cx - 3, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 5, cy - 2, cx - 4, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
+            }
+            ClientOnlyController.RepeatMode.SHUFFLE -> {
+                GuiComponent.fill(poseStack, cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 1, cy + 1, cx + 2, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 2, cy + 2, cx + 4, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 4, cy + 2, cx - 3, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy + 1, cx - 2, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 1, cy - 2, cx + 2, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 2, cy - 3, cx + 4, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 4, cy - 4, cx + 5, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 4, cy + 1, cx + 5, cy + 4, iconColor)
+            }
+            ClientOnlyController.RepeatMode.SHUFFLE_REPEAT -> {
+                GuiComponent.fill(poseStack, cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 1, cy + 1, cx + 2, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 2, cy + 2, cx + 4, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 4, cy + 2, cx - 3, cy + 3, iconColor)
+                GuiComponent.fill(poseStack, cx - 3, cy + 1, cx - 2, cy + 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 1, cy - 2, cx + 2, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 2, cy - 3, cx + 4, cy - 2, iconColor)
+                GuiComponent.fill(poseStack, cx + 4, cy - 4, cx + 5, cy - 1, iconColor)
+                GuiComponent.fill(poseStack, cx + 4, cy + 1, cx + 5, cy + 4, iconColor)
+                GuiComponent.fill(poseStack, cx - 1, cy - 1, cx, cy, iconColor)
+                GuiComponent.fill(poseStack, cx, cy - 1, cx + 1, cy + 1, iconColor)
+            }
         }
     }
 
