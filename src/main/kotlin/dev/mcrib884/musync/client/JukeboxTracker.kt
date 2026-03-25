@@ -2,6 +2,9 @@ package dev.mcrib884.musync.client
 
 import net.minecraft.core.BlockPos
 import net.minecraft.resources.ResourceKey
+//? if >=1.21.11 {
+/*import dev.mcrib884.musync.location*/
+//?}
 import net.minecraft.world.level.Level
 import java.util.concurrent.ConcurrentHashMap
 

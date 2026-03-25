@@ -2,7 +2,11 @@ package dev.mcrib884.musync
 
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.network.chat.Component
+//? if >=1.21.11 {
+/*import net.minecraft.resources.Identifier as ResourceLocation*/
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.minecraft.server.MinecraftServer
 //? if fabric {
 /*import dev.mcrib884.musync.MuSyncFabric*/
@@ -69,7 +73,10 @@ internal fun CommandSourceStack.sendSuccessCompat(message: () -> Component, broa
 	sendSuccess(message(), broadcast)*/
 //?}
 
-//? if >=1.20 {
+//? if >=1.21.11 {
+/*internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
+	music.sound().value().location*/
+//?} else if >=1.20 {
 internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
 	music.event.value().location
 //?} else {
@@ -85,4 +92,72 @@ internal fun setMusicVolume(mc: net.minecraft.client.Minecraft, volume: Float) {
 /*internal fun setMusicVolume(mc: net.minecraft.client.Minecraft, volume: Float) {
 	mc.options.setSoundCategoryVolume(net.minecraft.sounds.SoundSource.MUSIC, volume)
 }*/
+//?}
+
+//? if >=1.21.11 {
+/*internal fun playerServer(player: net.minecraft.server.level.ServerPlayer): net.minecraft.server.MinecraftServer =
+	player.level().getServer()!!*/
+//?} else {
+internal fun playerServer(player: net.minecraft.server.level.ServerPlayer): net.minecraft.server.MinecraftServer =
+	player.server
+//?}
+
+//? if >=1.21.11 {
+/*internal fun <T : Any> net.minecraft.resources.ResourceKey<T>.location(): ResourceLocation = this.identifier()
+
+internal fun net.minecraft.client.gui.GuiGraphics.renderTooltipCompat(
+	font: net.minecraft.client.gui.Font,
+	lines: List<net.minecraft.util.FormattedCharSequence>,
+	mouseX: Int,
+	mouseY: Int
+) {
+	setTooltipForNextFrame(font, lines, mouseX, mouseY)
+}*/
+//?} else if >=1.20 {
+internal fun net.minecraft.client.gui.GuiGraphics.renderTooltipCompat(
+	font: net.minecraft.client.gui.Font,
+	lines: List<net.minecraft.util.FormattedCharSequence>,
+	mouseX: Int,
+	mouseY: Int
+) {
+	renderTooltip(font, lines, mouseX, mouseY)
+}
+//?}
+
+//? if >=1.21.11 {
+/*internal fun isOp(player: net.minecraft.client.player.LocalPlayer?): Boolean =
+	player?.permissions()?.hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER) == true
+
+internal fun CommandSourceStack.hasPermissionCompat(level: Int): Boolean =
+	this.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER)*/
+//?} else {
+internal fun isOp(player: net.minecraft.client.player.LocalPlayer?): Boolean =
+	player?.hasPermissions(2) == true
+
+internal fun CommandSourceStack.hasPermissionCompat(@Suppress("UNUSED_PARAMETER") level: Int): Boolean =
+	this.hasPermission(level)
+//?}
+
+//? if neoforge && >=1.21.11 {
+/*internal fun isNeoForgeClient(): Boolean = net.neoforged.fml.loading.FMLEnvironment.getDist() == net.neoforged.api.distmarker.Dist.CLIENT*/
+//?} else if neoforge {
+/*internal fun isNeoForgeClient(): Boolean = net.neoforged.fml.loading.FMLEnvironment.dist == net.neoforged.api.distmarker.Dist.CLIENT*/
+//?}
+
+//? if >=1.21.11 {
+/*private val musyncKeyCategory: net.minecraft.client.KeyMapping.Category by lazy {
+	net.minecraft.client.KeyMapping.Category.register(net.minecraft.resources.Identifier.fromNamespaceAndPath("musync", "musync"))
+}
+internal fun createKeyMapping(name: String, type: com.mojang.blaze3d.platform.InputConstants.Type, keyCode: Int, categoryStr: String): net.minecraft.client.KeyMapping {
+	return net.minecraft.client.KeyMapping(name, type, keyCode, musyncKeyCategory)
+}
+
+internal fun playerDimString(player: net.minecraft.client.player.LocalPlayer?): String? =
+	player?.entityLevel()?.dimension()?.identifier()?.toString()*/
+//?} else {
+internal fun createKeyMapping(name: String, type: com.mojang.blaze3d.platform.InputConstants.Type, keyCode: Int, categoryStr: String): net.minecraft.client.KeyMapping =
+	net.minecraft.client.KeyMapping(name, type, keyCode, categoryStr)
+
+internal fun playerDimString(player: net.minecraft.client.player.LocalPlayer?): String? =
+	player?.entityLevel()?.dimension()?.location()?.toString()
 //?}

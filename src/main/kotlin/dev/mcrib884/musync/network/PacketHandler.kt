@@ -1,6 +1,7 @@
 package dev.mcrib884.musync.network
 
 import dev.mcrib884.musync.MOD_ID
+import dev.mcrib884.musync.playerServer
 //? if fabric {
 /*import dev.mcrib884.musync.client.ClientMusicPlayer
 import dev.mcrib884.musync.client.ClientTrackManager
@@ -21,7 +22,11 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload
 //?}
 import net.minecraft.client.Minecraft*/
 //?}
+//? if >=1.21.11 {
+/*import net.minecraft.resources.Identifier as ResourceLocation*/
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.minecraft.server.level.ServerPlayer
 //? if neoforge {
 /*import net.neoforged.neoforge.network.PacketDistributor
@@ -148,17 +153,17 @@ object PacketHandler {
         //? if >=1.21 {
         ensureFabricPayloadTypesRegistered()
         ServerPlayNetworking.registerGlobalReceiver(MusicControlPayload.TYPE) { payload, context ->
-            context.player().server.execute {
+            playerServer(context.player()).execute {
                 MusicManager.handleControlPacket(payload.packet, context.player())
             }
         }
         ServerPlayNetworking.registerGlobalReceiver(MusicClientInfoPayload.TYPE) { payload, context ->
-            context.player().server.execute {
+            playerServer(context.player()).execute {
                 MusicManager.handleClientInfo(payload.packet, context.player())
             }
         }
         ServerPlayNetworking.registerGlobalReceiver(TrackRequestPayload.TYPE) { payload, context ->
-            context.player().server.execute {
+            playerServer(context.player()).execute {
                 MusicManager.handleTrackRequest(payload.packet.manifestVersion, payload.packet.trackNames, context.player())
             }
         }
@@ -392,7 +397,11 @@ object PacketHandler {
         }*/
         //?}
         //?} else if neoforge {
+        //? if >=1.21.11 {
+        /*net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(packet as CustomPacketPayload)*/
+        //?} else {
         /*PacketDistributor.sendToServer(packet as CustomPacketPayload)*/
+        //?}
         //?} else {
         INSTANCE.send(net.minecraftforge.network.PacketDistributor.SERVER.noArg(), packet)
         //?}

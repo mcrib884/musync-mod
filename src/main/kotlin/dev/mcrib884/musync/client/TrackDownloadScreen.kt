@@ -60,7 +60,9 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if <1.21 {
+        //? if >=1.21 {
+        /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
+        //?} else {
         renderBackground(graphics)
         //?}
 
@@ -318,7 +320,7 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
     }*/
     //?}
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    private fun handleMouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean? {
         if (showingFailedOverlay && button == 0) {
             val failed = ClientTrackManager.getFailedTracks()
             val overlayW = 260
@@ -339,8 +341,18 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
             }
             return true
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return null
     }
+
+    //? if >=1.21.11 {
+    /*override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, bl: Boolean): Boolean {
+        return handleMouseClicked(event.x(), event.y(), event.button()) ?: super.mouseClicked(event, bl)
+    }*/
+    //?} else {
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        return handleMouseClicked(mouseX, mouseY, button) ?: super.mouseClicked(mouseX, mouseY, button)
+    }
+    //?}
 
     //? if >=1.20 {
     private fun renderFailedOverlay(graphics: GuiGraphics, mouseX: Int, mouseY: Int) {

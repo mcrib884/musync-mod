@@ -4,7 +4,11 @@ import net.minecraft.network.FriendlyByteBuf
 //? if neoforge {
 /*import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+//? if >=1.21.11 {
+import net.minecraft.resources.Identifier as ResourceLocation
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
 //?} else if forge {
 import net.minecraftforge.network.NetworkEvent
@@ -24,7 +28,7 @@ data class MusicControlPacket(
 ) {
 //?}
     enum class Action {
-        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, SELECT_DIMENSION, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, CYCLE_REPEAT_MODE, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL, HOTLOAD_TRACKS, CREDITS_SKIP
+        PLAY_TRACK, STOP, SKIP, PAUSE, RESUME, REQUEST_SYNC, SELECT_DIMENSION, ADD_TO_QUEUE, REMOVE_FROM_QUEUE, CLEAR_QUEUE, SET_DELAY, SEEK, CYCLE_REPEAT_MODE, TOGGLE_NETHER_SYNC, FORCE_SYNC_ALL, HOTLOAD_TRACKS, CREDITS_SKIP, PREVIOUS
     }
 
     companion object {

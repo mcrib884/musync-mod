@@ -6,14 +6,22 @@ import com.mojang.brigadier.arguments.IntegerArgumentType
 import com.mojang.brigadier.suggestion.SuggestionProvider
 import dev.mcrib884.musync.network.*
 import dev.mcrib884.musync.entityLevel
+//? if >=1.21.11 {
+/*import dev.mcrib884.musync.location*/
+//?}
 import net.minecraft.commands.CommandSourceStack
 import net.minecraft.commands.Commands
 import net.minecraft.commands.SharedSuggestionProvider
 import net.minecraft.network.chat.Component
 import dev.mcrib884.musync.sendSuccessCompat
+import dev.mcrib884.musync.hasPermissionCompat
 import dev.mcrib884.musync.soundEventKeys
 import dev.mcrib884.musync.soundEventContains
+//? if >=1.21.11 {
+/*import net.minecraft.resources.Identifier as ResourceLocation*/
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.minecraft.server.level.ServerPlayer
 
 object MuSyncCommand {
@@ -123,7 +131,7 @@ object MuSyncCommand {
     fun register(dispatcher: CommandDispatcher<CommandSourceStack>) {
         dispatcher.register(
             Commands.literal("musync")
-                .requires { it.hasPermission(2) }
+                .requires { it.hasPermissionCompat(2) }
                 .then(
                     Commands.literal("gui")
                         .executes { ctx ->

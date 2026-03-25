@@ -12,22 +12,24 @@ import net.fabricmc.api.ClientModInitializer
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents
-import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 
 class MuSyncFabricClient : ClientModInitializer {
     override fun onInitializeClient() {
         KeyBindings.MUSIC_GUI_KEY = KeyBindingHelper.registerKeyBinding(
-            KeyMapping("key.musync.gui", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+            createKeyMapping("key.musync.gui", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
         )
         KeyBindings.MUSIC_SKIP_KEY = KeyBindingHelper.registerKeyBinding(
-            KeyMapping("key.musync.skip", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+            createKeyMapping("key.musync.skip", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
         )
         KeyBindings.MUSIC_PAUSE_KEY = KeyBindingHelper.registerKeyBinding(
-            KeyMapping("key.musync.pause_resume", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+            createKeyMapping("key.musync.pause_resume", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
         )
         KeyBindings.MUSIC_STOP_KEY = KeyBindingHelper.registerKeyBinding(
-            KeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+            createKeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+        )
+        KeyBindings.MUSIC_PREV_KEY = KeyBindingHelper.registerKeyBinding(
+            createKeyMapping("key.musync.previous", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
         )
 
         ClientTickEvents.END_CLIENT_TICK.register(ClientTickEvents.EndTick { mc ->
@@ -44,7 +46,7 @@ class MuSyncFabricClient : ClientModInitializer {
                     }
                 }
                 if (ClientMusicPlayer.musyncActive && !ClientTrackManager.isDownloading) {
-                    val targetDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
+                    val targetDim = playerDimString(mc.player)
                     if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) {
                         PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim))
                     }
@@ -57,14 +59,19 @@ class MuSyncFabricClient : ClientModInitializer {
                     if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) {
                         PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim))
                     }
+                    if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) {
+                        PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.PREVIOUS, null, null, targetDim = targetDim))
+                    }
                 } else if (!ClientMusicPlayer.musyncActive) {
                     if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) ClientOnlyController.skip()
                     if (KeyBindings.MUSIC_PAUSE_KEY.consumeClick()) ClientOnlyController.togglePause()
                     if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) ClientOnlyController.stop()
+                    if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) ClientOnlyController.previous()
                 } else {
                     KeyBindings.MUSIC_SKIP_KEY.consumeClick()
                     KeyBindings.MUSIC_PAUSE_KEY.consumeClick()
                     KeyBindings.MUSIC_STOP_KEY.consumeClick()
+                    KeyBindings.MUSIC_PREV_KEY.consumeClick()
                 }
             }
         })

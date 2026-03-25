@@ -6,7 +6,11 @@ import dev.mcrib884.musync.network.*
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.sounds.SoundSource
+//? if >=1.21.11 {
+/*import net.minecraft.resources.Identifier as ResourceLocation*/
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import org.lwjgl.openal.AL10
 import org.lwjgl.openal.AL11
 import java.io.File

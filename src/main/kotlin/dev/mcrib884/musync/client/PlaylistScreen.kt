@@ -38,7 +38,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     private var deleteBounds: BtnBounds? = null
 
     private val isOp: Boolean
-        get() = ClientOnlyController.isActive || Minecraft.getInstance().player?.hasPermissions(2) == true
+        get() = ClientOnlyController.isActive || dev.mcrib884.musync.isOp(Minecraft.getInstance().player)
 
     private fun effectiveStatus(): dev.mcrib884.musync.network.MusicStatusPacket? {
         return if (ClientOnlyController.isActive) ClientOnlyController.getStatus() else ClientMusicPlayer.getCurrentStatus()
@@ -163,7 +163,9 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if <1.21 {
+        //? if >=1.21 {
+        /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
+        //?} else {
         renderBackground(graphics)
         //?}
 
@@ -521,7 +523,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     }*/
     //?}
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    private fun handleMouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean? {
         if (button == 0) {
             val status = effectiveStatus()
             val queue = status?.queue ?: emptyList()
@@ -627,10 +629,20 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
                 deleteSelectedPlaylist(); return true
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return null
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    //? if >=1.21.11 {
+    /*override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, bl: Boolean): Boolean {
+        return handleMouseClicked(event.x(), event.y(), event.button()) ?: super.mouseClicked(event, bl)
+    }*/
+    //?} else {
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        return handleMouseClicked(mouseX, mouseY, button) ?: super.mouseClicked(mouseX, mouseY, button)
+    }
+    //?}
+
+    private fun handleMouseDragged(mouseX: Double, mouseY: Double, button: Int): Boolean? {
         if (draggingQueueScrollbar && button == 0) {
             val queueSize = effectiveStatus()?.queue?.size ?: 0
             val listY = queueRowsY()
@@ -649,9 +661,29 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
             savedScrollOffset = (ratio * maxScroll).toInt().coerceIn(0, maxScroll)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return null
     }
 
+    //? if >=1.21.11 {
+    /*override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, deltaX: Double, deltaY: Double): Boolean {
+        return handleMouseDragged(event.x(), event.y(), event.button()) ?: super.mouseDragged(event, deltaX, deltaY)
+    }*/
+    //?} else {
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        return handleMouseDragged(mouseX, mouseY, button) ?: super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+    }
+    //?}
+
+    //? if >=1.21.11 {
+    /*override fun mouseReleased(event: net.minecraft.client.input.MouseButtonEvent): Boolean {
+        if (event.button() == 0 && (draggingQueueScrollbar || draggingSavedScrollbar)) {
+            draggingQueueScrollbar = false
+            draggingSavedScrollbar = false
+            return true
+        }
+        return super.mouseReleased(event)
+    }*/
+    //?} else {
     override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
         if (button == 0 && (draggingQueueScrollbar || draggingSavedScrollbar)) {
             draggingQueueScrollbar = false
@@ -660,6 +692,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         }
         return super.mouseReleased(mouseX, mouseY, button)
     }
+    //?}
 
     //? if >=1.21 {
     /*override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, delta: Double): Boolean {*/
@@ -684,6 +717,15 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
     override fun isPauseScreen(): Boolean = false
 
+    //? if >=1.21.11 {
+    /*override fun keyPressed(event: net.minecraft.client.input.KeyEvent): Boolean {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(event)) {
+            onClose()
+            return true
+        }
+        return super.keyPressed(event)
+    }*/
+    //?} else {
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
             onClose()
@@ -691,6 +733,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
+    //?}
 
     //? if >=1.20 {
     private fun drawCustomBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean = true) {

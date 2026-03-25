@@ -10,7 +10,6 @@ import dev.mcrib884.musync.command.MuSyncCommand
 import dev.mcrib884.musync.network.MusicControlPacket
 import dev.mcrib884.musync.network.PacketHandler
 import dev.mcrib884.musync.server.MusicManager
-import net.minecraft.client.KeyMapping
 import net.minecraft.client.Minecraft
 import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent
@@ -22,8 +21,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent
 import net.neoforged.neoforge.event.server.ServerStartedEvent
 import net.neoforged.neoforge.event.server.ServerStoppingEvent
 import net.neoforged.fml.common.Mod
-import net.neoforged.fml.loading.FMLEnvironment
-import net.neoforged.api.distmarker.Dist
 import net.neoforged.bus.api.IEventBus
 
 @Mod(MOD_ID)
@@ -48,16 +45,18 @@ class MuSyncNeoForge(modBus: IEventBus) {
             (event.entity as? ServerPlayer)?.let { MusicManager.onPlayerChangedDimension(event.from, event.to, it) }
         }
 
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (isNeoForgeClient()) {
             modBus.addListener<RegisterKeyMappingsEvent> { event ->
-                KeyBindings.MUSIC_GUI_KEY = KeyMapping("key.musync.gui", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                KeyBindings.MUSIC_GUI_KEY = createKeyMapping("key.musync.gui", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
                 event.register(KeyBindings.MUSIC_GUI_KEY)
-                KeyBindings.MUSIC_SKIP_KEY = KeyMapping("key.musync.skip", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                KeyBindings.MUSIC_SKIP_KEY = createKeyMapping("key.musync.skip", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
                 event.register(KeyBindings.MUSIC_SKIP_KEY)
-                KeyBindings.MUSIC_PAUSE_KEY = KeyMapping("key.musync.pause_resume", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                KeyBindings.MUSIC_PAUSE_KEY = createKeyMapping("key.musync.pause_resume", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
                 event.register(KeyBindings.MUSIC_PAUSE_KEY)
-                KeyBindings.MUSIC_STOP_KEY = KeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                KeyBindings.MUSIC_STOP_KEY = createKeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
                 event.register(KeyBindings.MUSIC_STOP_KEY)
+                KeyBindings.MUSIC_PREV_KEY = createKeyMapping("key.musync.previous", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                event.register(KeyBindings.MUSIC_PREV_KEY)
             }
 
             NeoForge.EVENT_BUS.addListener<ClientTickEvent.Post> { _ ->
@@ -75,7 +74,7 @@ class MuSyncNeoForge(modBus: IEventBus) {
                         }
                     }
                     if (ClientMusicPlayer.musyncActive && !ClientTrackManager.isDownloading) {
-                        val targetDim = mc.player?.entityLevel()?.dimension()?.location()?.toString()
+                        val targetDim = playerDimString(mc.player)
                         if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) {
                             PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim))
                         }
@@ -88,14 +87,19 @@ class MuSyncNeoForge(modBus: IEventBus) {
                         if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) {
                             PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim))
                         }
+                        if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) {
+                            PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.PREVIOUS, null, null, targetDim = targetDim))
+                        }
                     } else if (!ClientMusicPlayer.musyncActive) {
                         if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) ClientOnlyController.skip()
                         if (KeyBindings.MUSIC_PAUSE_KEY.consumeClick()) ClientOnlyController.togglePause()
                         if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) ClientOnlyController.stop()
+                        if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) ClientOnlyController.previous()
                     } else {
                         KeyBindings.MUSIC_SKIP_KEY.consumeClick()
                         KeyBindings.MUSIC_PAUSE_KEY.consumeClick()
                         KeyBindings.MUSIC_STOP_KEY.consumeClick()
+                        KeyBindings.MUSIC_PREV_KEY.consumeClick()
                     }
                 }
             }

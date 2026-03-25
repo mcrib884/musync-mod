@@ -5,7 +5,7 @@ plugins {
 	id("dev.kikugie.stonecutter")
 	kotlin("jvm") version "2.2.0" apply false
 	id("architectury-plugin") version "3.4-SNAPSHOT" apply false
-	id("dev.architectury.loom") version "1.11-SNAPSHOT" apply false
+	id("dev.architectury.loom") version "1.13-SNAPSHOT" apply false
 	id("org.jetbrains.gradle.plugin.idea-ext") version "1.1.10"
 }
 stonecutter active "1.20.1-forge"

@@ -15,6 +15,12 @@ import net.minecraft.client.gui.screens.Screen
 import net.minecraft.network.chat.Component
 import net.minecraft.sounds.SoundSource
 import dev.mcrib884.musync.entityLevel
+//? if >=1.21.11 {
+/*import dev.mcrib884.musync.location*/
+//?}
+//? if >=1.20 {
+import dev.mcrib884.musync.renderTooltipCompat
+//?}
 
 class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
@@ -25,6 +31,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private val SEEK_COOLDOWN_MS = 500L
     private var draggingSeekBar = false
     private var dragSeekProgress: Float = 0f
+    private var seekHoldUntilMs: Long = 0
+    private var seekHoldProgress: Float = 0f
     private var panelX = 0
     private var panelY = 0
     private val barH = 8
@@ -40,6 +48,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     private data class BtnBounds(val x: Int, val y: Int, val w: Int, val h: Int, val label: String, var active: Boolean = true)
 
+    private var prevBounds: BtnBounds? = null
     private var stopBounds: BtnBounds? = null
     private var pauseBounds: BtnBounds? = null
     private var skipBounds: BtnBounds? = null
@@ -69,7 +78,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var displayedHasTrack: Boolean = false
 
     private val isOp: Boolean
-        get() = ClientOnlyController.isActive || Minecraft.getInstance().player?.hasPermissions(2) == true
+        get() = ClientOnlyController.isActive || dev.mcrib884.musync.isOp(Minecraft.getInstance().player)
 
     private fun effectiveStatus(): MusicStatusPacket? {
         return if (ClientOnlyController.isActive) ClientOnlyController.getStatus() else ClientMusicPlayer.getCurrentStatus()
@@ -97,16 +106,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         barY = panelY + 82
 
         val op = isOp
-        val btnW = 56
+        val btnW = 42
         val btnH = 16
-        val btnSpacing = 6
-        val totalBtnW = btnW * 3 + btnSpacing * 2
+        val btnSpacing = 4
+        val totalBtnW = btnW * 4 + btnSpacing * 3
         val btnStartX = panelX + (panelW - totalBtnW) / 2
         val btnY = panelY + 102
 
-        stopBounds = BtnBounds(btnStartX, btnY, btnW, btnH, "\u25A0 Stop", op)
-        pauseBounds = BtnBounds(btnStartX + btnW + btnSpacing, btnY, btnW, btnH, "\u23F8 Pause", op)
-        skipBounds = BtnBounds(btnStartX + (btnW + btnSpacing) * 2, btnY, btnW, btnH, "\u23ED Skip", op)
+        prevBounds = BtnBounds(btnStartX, btnY, btnW, btnH, "\u23EE Prev", op)
+        stopBounds = BtnBounds(btnStartX + (btnW + btnSpacing), btnY, btnW, btnH, "\u25A0 Stop", op)
+        pauseBounds = BtnBounds(btnStartX + (btnW + btnSpacing) * 2, btnY, btnW, btnH, "\u23F8 Pause", op)
+        skipBounds = BtnBounds(btnStartX + (btnW + btnSpacing) * 3, btnY, btnW, btnH, "\u23ED Skip", op)
         repeatBtnBounds = BtnBounds(panelX + panelW - 22, btnY, 16, 16, "")
 
         val delayY = panelY + 150
@@ -177,7 +187,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if <1.21 {
+        //? if >=1.21 {
+        /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
+        //?} else {
         renderBackground(graphics)
         //?}
 
@@ -246,7 +258,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             "No track"
         }
 
-        graphics.drawCenteredString(font, trackText, cx, panelY + 26, 0xFFFFFF)
+        graphics.drawCenteredString(font, trackText, cx, panelY + 26, 0xFFFFFFFF.toInt())
 
         if (displayTrack != null && displayResolved.isNotEmpty()) {
             graphics.drawCenteredString(font, formatSoundEvent(displayTrack), cx, panelY + 38, 0xFF777799.toInt())
@@ -272,7 +284,11 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         drawVolumeBar(graphics, volumeBarX, volumeBarY, volumeBarW, volumeBarH)
 
         val actualProgress = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
-        val progress = if (draggingSeekBar) dragSeekProgress else actualProgress
+        if (!draggingSeekBar && seekHoldUntilMs > 0 && kotlin.math.abs(actualProgress - seekHoldProgress) < 0.05f) {
+            seekHoldUntilMs = 0
+        }
+        val holdingSeek = !draggingSeekBar && System.currentTimeMillis() < seekHoldUntilMs
+        val progress = if (draggingSeekBar) dragSeekProgress else if (holdingSeek) seekHoldProgress else actualProgress
         val filledW = (barW * progress).toInt()
 
         graphics.fill(barX, barY, barX + barW, barY + barH, 0xFF222244.toInt())
@@ -292,7 +308,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             graphics.fill(headX - 1, barY - 2, headX + 1, barY + barH + 2, 0xFFFFFFFF.toInt())
         }
 
-        val shownPosition = if (draggingSeekBar && displayDuration > 0) (dragSeekProgress * displayDuration).toLong() else displayPosition
+        val shownPosition = if ((draggingSeekBar || holdingSeek) && displayDuration > 0) ((if (draggingSeekBar) dragSeekProgress else seekHoldProgress) * displayDuration).toLong() else displayPosition
         val timeText = if (displayTrack != null) {
             val posStr = formatTime(shownPosition)
             val durStr = if (displayDuration > 0) formatTime(displayDuration) else "--:--"
@@ -300,18 +316,25 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         } else {
             "0:00 / 0:00"
         }
-        val timeColor = if (draggingSeekBar) 0xFF55CCFF.toInt() else 0xFF999999.toInt()
+        val timeColor = if (draggingSeekBar || holdingSeek) 0xFF55CCFF.toInt() else 0xFF999999.toInt()
         graphics.drawCenteredString(font, timeText, cx, barY + barH + 3, timeColor)
 
         pauseIsPlaying = displayIsPlaying
         val pauseLabel = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
-        pauseBounds?.let { b ->
+        if (ClientOnlyController.isActive) {
+            prevBounds?.active = isOp && ClientOnlyController.hasHistory
+        }
+        prevBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
-            drawCustomBtn(graphics, b.x, b.y, b.w, b.h, pauseLabel, hov, b.active)
+            drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, hov, b.active)
         }
         stopBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
             drawCustomBtn(graphics, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        pauseBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn(graphics, b.x, b.y, b.w, b.h, pauseLabel, hov, b.active)
         }
         skipBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
@@ -482,7 +505,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             "No track"
         }
 
-        GuiComponent.drawCenteredString(poseStack, font, trackText, cx, panelY + 26, 0xFFFFFF)
+        GuiComponent.drawCenteredString(poseStack, font, trackText, cx, panelY + 26, 0xFFFFFFFF.toInt())
 
         if (displayTrack != null && displayResolved.isNotEmpty()) {
             GuiComponent.drawCenteredString(poseStack, font, formatSoundEvent(displayTrack), cx, panelY + 38, 0xFF777799.toInt())
@@ -507,13 +530,20 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.drawCenteredString(poseStack, font, statusText, cx, panelY + 52, statusColor)
         drawVolumeBar1919(poseStack, volumeBarX, volumeBarY, volumeBarW, volumeBarH)
 
-        val progress = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
+        val actualProgress1919 = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
+        if (!draggingSeekBar && seekHoldUntilMs > 0 && kotlin.math.abs(actualProgress1919 - seekHoldProgress) < 0.05f) {
+            seekHoldUntilMs = 0
+        }
+        val holdingSeek1919 = !draggingSeekBar && System.currentTimeMillis() < seekHoldUntilMs
+        val progress = if (draggingSeekBar) dragSeekProgress else if (holdingSeek1919) seekHoldProgress else actualProgress1919
         val filledW = (barW * progress).toInt()
 
         GuiComponent.fill(poseStack, barX, barY, barX + barW, barY + barH, 0xFF222244.toInt())
         if (filledW > 0) {
-            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH, 0xFF00CC66.toInt())
-            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH / 2, 0xFF00EE88.toInt())
+            val barColor1919 = if (draggingSeekBar) 0xFF33AAFF.toInt() else 0xFF00CC66.toInt()
+            val barHighlight1919 = if (draggingSeekBar) 0xFF55CCFF.toInt() else 0xFF00EE88.toInt()
+            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH, barColor1919)
+            GuiComponent.fill(poseStack, barX, barY, barX + filledW, barY + barH / 2, barHighlight1919)
         }
         GuiComponent.fill(poseStack, barX - 1, barY - 1, barX + barW + 1, barY, 0xFF333355.toInt())
         GuiComponent.fill(poseStack, barX - 1, barY + barH, barX + barW + 1, barY + barH + 1, 0xFF333355.toInt())
@@ -525,24 +555,33 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             GuiComponent.fill(poseStack, headX - 1, barY - 1, headX + 1, barY + barH + 1, 0xFFFFFFFF.toInt())
         }
 
+        val shownPosition1919 = if ((draggingSeekBar || holdingSeek1919) && displayDuration > 0) ((if (draggingSeekBar) dragSeekProgress else seekHoldProgress) * displayDuration).toLong() else displayPosition
         val timeText = if (displayTrack != null) {
-            val posStr = formatTime(displayPosition)
+            val posStr = formatTime(shownPosition1919)
             val durStr = if (displayDuration > 0) formatTime(displayDuration) else "--:--"
             "$posStr / $durStr"
         } else {
             "0:00 / 0:00"
         }
-        GuiComponent.drawCenteredString(poseStack, font, timeText, cx, barY + barH + 3, 0xFF999999.toInt())
+        val timeColor1919 = if (draggingSeekBar || holdingSeek1919) 0xFF55CCFF.toInt() else 0xFF999999.toInt()
+        GuiComponent.drawCenteredString(poseStack, font, timeText, cx, barY + barH + 3, timeColor1919)
 
         pauseIsPlaying = displayIsPlaying
         val pauseLbl1919 = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
-        pauseBounds?.let { b ->
+        if (ClientOnlyController.isActive) {
+            prevBounds?.active = isOp && ClientOnlyController.hasHistory
+        }
+        prevBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
-            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, pauseLbl1919, hov, b.active)
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
         }
         stopBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
             drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hov, b.active)
+        }
+        pauseBounds?.let { b ->
+            val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawCustomBtn1919(poseStack, b.x, b.y, b.w, b.h, pauseLbl1919, hov, b.active)
         }
         skipBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
@@ -660,7 +699,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     }*/
     //?}
 
-    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    private fun handleMouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean? {
         val mxi = mouseX.toInt()
         val myi = mouseY.toInt()
         if (button == 0 && isPointInVolumeIcon(mouseX, mouseY)) {
@@ -679,6 +718,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (button == 0 && mxi in hotloadBtnX until hotloadBtnX + topBtnSize && myi in hotloadBtnY until hotloadBtnY + topBtnSize) {
             sendControl(MusicControlPacket.Action.HOTLOAD_TRACKS)
             return true
+        }
+        if (button == 0 && prevBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h && it.active } == true) {
+            sendControl(MusicControlPacket.Action.PREVIOUS); return true
         }
         if (button == 0 && stopBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h && it.active } == true) {
             sendControl(MusicControlPacket.Action.STOP); return true
@@ -732,10 +774,20 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button)
+        return null
     }
 
-    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+    //? if >=1.21.11 {
+    /*override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, bl: Boolean): Boolean {
+        return handleMouseClicked(event.x(), event.y(), event.button()) ?: super.mouseClicked(event, bl)
+    }*/
+    //?} else {
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        return handleMouseClicked(mouseX, mouseY, button) ?: super.mouseClicked(mouseX, mouseY, button)
+    }
+    //?}
+
+    private fun handleMouseDragged(mouseX: Double, mouseY: Double, button: Int): Boolean? {
         if (draggingVolume && button == 0) {
             setMusicVolumeFromMouse(mouseY)
             return true
@@ -744,16 +796,28 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             dragSeekProgress = ((mouseX - barX) / barW).toFloat().coerceIn(0f, 1f)
             return true
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+        return null
     }
 
-    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+    //? if >=1.21.11 {
+    /*override fun mouseDragged(event: net.minecraft.client.input.MouseButtonEvent, deltaX: Double, deltaY: Double): Boolean {
+        return handleMouseDragged(event.x(), event.y(), event.button()) ?: super.mouseDragged(event, deltaX, deltaY)
+    }*/
+    //?} else {
+    override fun mouseDragged(mouseX: Double, mouseY: Double, button: Int, dragX: Double, dragY: Double): Boolean {
+        return handleMouseDragged(mouseX, mouseY, button) ?: super.mouseDragged(mouseX, mouseY, button, dragX, dragY)
+    }
+    //?}
+
+    private fun handleMouseReleased(button: Int): Boolean? {
         if (button == 0 && draggingVolume) {
             draggingVolume = false
             return true
         }
         if (button == 0 && draggingSeekBar) {
             draggingSeekBar = false
+            seekHoldProgress = dragSeekProgress
+            seekHoldUntilMs = System.currentTimeMillis() + 1500L
             if (displayedHasTrack && displayedDuration > 0) {
                 val seekMs = (dragSeekProgress * displayedDuration).toLong()
                 if (ClientOnlyController.isActive) {
@@ -771,11 +835,30 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             }
             return true
         }
-        return super.mouseReleased(mouseX, mouseY, button)
+        return null
     }
+
+    //? if >=1.21.11 {
+    /*override fun mouseReleased(event: net.minecraft.client.input.MouseButtonEvent): Boolean {
+        return handleMouseReleased(event.button()) ?: super.mouseReleased(event)
+    }*/
+    //?} else {
+    override fun mouseReleased(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        return handleMouseReleased(button) ?: super.mouseReleased(mouseX, mouseY, button)
+    }
+    //?}
 
     override fun isPauseScreen(): Boolean = false
 
+    //? if >=1.21.11 {
+    /*override fun keyPressed(event: net.minecraft.client.input.KeyEvent): Boolean {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(event)) {
+            onClose()
+            return true
+        }
+        return super.keyPressed(event)
+    }*/
+    //?} else {
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
         if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
             onClose()
@@ -783,6 +866,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
         return super.keyPressed(keyCode, scanCode, modifiers)
     }
+    //?}
 
     private fun applyDelay() {
         val minStr = minDelayField?.value ?: return
@@ -806,6 +890,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private fun sendControl(action: MusicControlPacket.Action, trackId: String? = null) {
         if (ClientOnlyController.isActive) {
             when (action) {
+                MusicControlPacket.Action.PREVIOUS -> ClientOnlyController.previous()
                 MusicControlPacket.Action.STOP -> ClientOnlyController.stop()
                 MusicControlPacket.Action.PAUSE -> ClientOnlyController.pause()
                 MusicControlPacket.Action.RESUME -> ClientOnlyController.resume()
@@ -1007,7 +1092,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             } else {
                 "Music volume: ${(getMusicVolume() * 100f).toInt()}%"
             }
-            graphics.renderTooltip(font, listOf(Component.literal(pctText).visualOrderText), mouseX, mouseY)
+            graphics.renderTooltipCompat(font, listOf(Component.literal(pctText).visualOrderText), mouseX, mouseY)
         }
     }
 
@@ -1039,7 +1124,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                     add(Component.literal(getDimDisplayName(dim.id)).visualOrderText)
                     add(Component.literal("Players: ${dim.players.joinToString(", ")}").visualOrderText)
                 }
-                graphics.renderTooltip(font, lines, mouseX, mouseY)
+                graphics.renderTooltipCompat(font, lines, mouseX, mouseY)
             }
         }
     }
@@ -1051,15 +1136,15 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         status: MusicStatusPacket?
     ) {
         if (mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize) {
-            graphics.renderTooltip(font, listOf(Component.literal("Sync with server").visualOrderText), mouseX, mouseY)
+            graphics.renderTooltipCompat(font, listOf(Component.literal("Sync with server").visualOrderText), mouseX, mouseY)
         }
         if (mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize) {
-            graphics.renderTooltip(font, listOf(Component.literal("Hotload custom tracks").visualOrderText), mouseX, mouseY)
+            graphics.renderTooltipCompat(font, listOf(Component.literal("Hotload custom tracks").visualOrderText), mouseX, mouseY)
         }
         repeatBtnBounds?.let { b ->
             if (mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) {
                 val label = repeatModeLabel(effectiveRepeatMode())
-                graphics.renderTooltip(font, listOf(Component.literal(label).visualOrderText), mouseX, mouseY)
+                graphics.renderTooltipCompat(font, listOf(Component.literal(label).visualOrderText), mouseX, mouseY)
             }
         }
         if (mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize) {
@@ -1071,7 +1156,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                     add(Component.literal("Players: ${players.joinToString(", ")}").visualOrderText)
                 }
             }
-            graphics.renderTooltip(font, lines, mouseX, mouseY)
+            graphics.renderTooltipCompat(font, lines, mouseX, mouseY)
         }
     }
     //?} else {

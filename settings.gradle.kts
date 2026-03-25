@@ -23,6 +23,7 @@ stonecutter {
 			}
 		}
 
+		mc("1.21.11", loaders = listOf("neoforge", "fabric"))
 		mc("1.21.1", loaders = listOf("neoforge", "fabric"))
 		mc("1.20.1", loaders = listOf("forge", "fabric"))
 		mc("1.19.2", loaders = listOf("forge", "fabric"))

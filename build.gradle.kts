@@ -6,6 +6,7 @@ plugins {
 	kotlin("jvm")
 	id("dev.architectury.loom")
 	id("architectury-plugin")
+	id("me.modmuss50.mod-publish-plugin") version "0.8.3"
 }
 
 val mcVersion = stonecutter.current.version
@@ -97,7 +98,11 @@ dependencies {
 	when (loaderPlatform) {
 		"neoforge" -> {
 			"neoForge"("net.neoforged:neoforge:${loaderVersion}")
-			implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
+			if (mcVersion == "1.21.11") {
+				implementation("thedarkcolour:kotlinforforge-neoforge:6.2.0")
+			} else {
+				implementation("thedarkcolour:kotlinforforge-neoforge:5.6.0")
+			}
 		}
 		"fabric" -> {
 			val fabricApiVersion: String by project
@@ -195,6 +200,7 @@ tasks {
 	}
 
 	remapJar {
+		archiveFileName.set("${modId}-${loaderPlatform}-${mcVersion}+${modVersion}.jar")
 		injectAccessWidener.set(true)
 		atAccessWideners.add(loom.accessWidenerPath.get().asFile.name)
 	}
@@ -206,4 +212,45 @@ kotlin {
 
 java {
 	withSourcesJar()
+}
+
+publishMods {
+	file.set(tasks.named<org.gradle.jvm.tasks.Jar>("remapJar").flatMap { it.archiveFile })
+
+	val clFile = project.findProperty("changelogFile") as? String
+	if (clFile != null && rootProject.file(clFile).exists()) {
+		changelog.set(rootProject.file(clFile).readText())
+	} else {
+		changelog.set("No changelog provided.")
+	}
+
+	type.set(STABLE)
+	modLoaders.add(loaderPlatform)
+	
+	val uploadName = "musync-${loaderPlatform}-${mcVersion}+${modVersion}"
+	displayName.set(uploadName)
+	version.set(uploadName)
+
+	val cfToken = providers.environmentVariable("CURSEFORGE_TOKEN")
+	val mrToken = providers.environmentVariable("MODRINTH_TOKEN")
+
+	val publishMcVersion = if (mcVersion == "1.21.11") "1.21.1" else mcVersion
+
+	if (cfToken.isPresent) {
+		curseforge {
+			projectId.set("1474038")
+			accessToken.set(cfToken)
+			minecraftVersions.add(publishMcVersion)
+			clientRequired.set(true)
+			serverRequired.set(true)
+		}
+	}
+
+	if (mrToken.isPresent) {
+		modrinth {
+			projectId.set("Pdt1iYTy")
+			accessToken.set(mrToken)
+			minecraftVersions.add(publishMcVersion)
+		}
+	}
 }

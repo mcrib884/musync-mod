@@ -61,6 +61,8 @@ class MuSyncForge {
                 event.register(KeyBindings.MUSIC_PAUSE_KEY)
                 KeyBindings.MUSIC_STOP_KEY = KeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
                 event.register(KeyBindings.MUSIC_STOP_KEY)
+                KeyBindings.MUSIC_PREV_KEY = KeyMapping("key.musync.previous", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
+                event.register(KeyBindings.MUSIC_PREV_KEY)
             }
 
             MinecraftForge.EVENT_BUS.addListener<TickEvent.ClientTickEvent> { event ->
@@ -92,14 +94,19 @@ class MuSyncForge {
                             if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) {
                                 PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim))
                             }
+                            if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) {
+                                PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.PREVIOUS, null, null, targetDim = targetDim))
+                            }
                         } else if (!ClientMusicPlayer.musyncActive) {
                             if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) ClientOnlyController.skip()
                             if (KeyBindings.MUSIC_PAUSE_KEY.consumeClick()) ClientOnlyController.togglePause()
                             if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) ClientOnlyController.stop()
+                            if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) ClientOnlyController.previous()
                         } else {
                             KeyBindings.MUSIC_SKIP_KEY.consumeClick()
                             KeyBindings.MUSIC_PAUSE_KEY.consumeClick()
                             KeyBindings.MUSIC_STOP_KEY.consumeClick()
+                            KeyBindings.MUSIC_PREV_KEY.consumeClick()
                         }
                     }
                 }

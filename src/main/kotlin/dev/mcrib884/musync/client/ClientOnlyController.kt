@@ -3,6 +3,9 @@ package dev.mcrib884.musync.client
 import dev.mcrib884.musync.createSoundEvent
 import dev.mcrib884.musync.entityLevel
 import dev.mcrib884.musync.musicEventLocation
+//? if >=1.21.11 {
+/*import dev.mcrib884.musync.location*/
+//?}
 import dev.mcrib884.musync.mixin.MusicManagerAccessor
 import dev.mcrib884.musync.network.MusicStatusPacket
 import net.minecraft.client.Minecraft
@@ -10,7 +13,11 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance
 import net.minecraft.client.resources.sounds.SoundInstance
 import net.minecraft.client.player.LocalPlayer
 import net.minecraft.sounds.SoundSource
+//? if >=1.21.11 {
+/*import net.minecraft.resources.Identifier as ResourceLocation*/
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon
 import org.lwjgl.openal.AL10
 import java.io.File
@@ -42,6 +49,9 @@ object ClientOnlyController {
     private var customMinDelay: Int = -1
     private var customMaxDelay: Int = -1
     private val recentTracks: MutableList<String> = mutableListOf()
+    private val trackHistory: MutableList<String> = mutableListOf()
+    private val maxTrackHistory = 20
+    private var suppressHistoryPush = false
     private var localCustomTracks: List<String> = emptyList()
     private var lastMusicVol: Float = -1f
     private var lastMasterVol: Float = -1f
@@ -54,6 +64,9 @@ object ClientOnlyController {
 
     val isActive: Boolean
         get() = !ClientMusicPlayer.musyncActive
+
+    val hasHistory: Boolean
+        get() = trackHistory.isNotEmpty()
 
     fun getStatus(): MusicStatusPacket {
         val pos = getCurrentPositionMs()
@@ -135,6 +148,14 @@ object ClientOnlyController {
 
     fun playTrack(trackId: String) {
         if (loadingCustomTrack) return
+        if (!suppressHistoryPush) {
+            val prevTrack = currentTrack
+            if (prevTrack != null) {
+                val toPush = if (prevTrack.contains("|") || prevTrack.startsWith("custom:") || resolvedName == null) prevTrack else "$prevTrack|$resolvedName"
+                trackHistory.add(toPush)
+                if (trackHistory.size > maxTrackHistory) trackHistory.removeAt(0)
+            }
+        }
         stopInternal()
         val localTrack = resolveLocalTrackName(trackId)
 
@@ -190,8 +211,13 @@ object ClientOnlyController {
 
     private fun playVanillaTrack(trackId: String): Boolean {
         val trackValue = dev.mcrib884.musync.command.MuSyncCommand.resolveTrackValue(trackId)
-        val actualTrackId = trackValue?.substringBefore("|") ?: resolveVanillaTrackId(trackId)
-        val specificSound = if (trackValue != null && trackValue.contains("|")) trackValue.substringAfter("|") else ""
+        var actualTrackId = trackValue?.substringBefore("|") ?: resolveVanillaTrackId(trackId)
+        var specificSound = if (trackValue != null && trackValue.contains("|")) trackValue.substringAfter("|") else ""
+        if (trackValue == null && actualTrackId.contains("|")) {
+            val parts = actualTrackId.split("|", limit = 2)
+            actualTrackId = parts[0]
+            specificSound = parts[1]
+        }
         return playResolvedVanillaTrack(actualTrackId, specificSound, trackId, MusicStatusPacket.PlayMode.PLAYLIST)
     }
 
@@ -201,6 +227,15 @@ object ClientOnlyController {
         currentTrackId: String,
         playMode: MusicStatusPacket.PlayMode
     ): Boolean {
+        if (playMode == MusicStatusPacket.PlayMode.AUTONOMOUS && !suppressHistoryPush) {
+            val prevTrack = currentTrack
+            if (prevTrack != null) {
+                val toPush = if (prevTrack.contains("|") || prevTrack.startsWith("custom:") || resolvedName == null) prevTrack else "$prevTrack|$resolvedName"
+                trackHistory.add(toPush)
+                if (trackHistory.size > maxTrackHistory) trackHistory.removeAt(0)
+            }
+        }
+
         val mc = Minecraft.getInstance()
         val accessor = mc.musicManager as? MusicManagerAccessor ?: return false
         suppressVanilla(mc)
@@ -290,6 +325,17 @@ object ClientOnlyController {
         } else {
             mode = MusicStatusPacket.PlayMode.AUTONOMOUS
             playNextAutoTrack()
+        }
+    }
+
+    fun previous() {
+        val prev = trackHistory.removeLastOrNull() ?: return
+        suppressHistoryPush = true
+        try {
+            stopInternal()
+            playTrack(prev)
+        } finally {
+            suppressHistoryPush = false
         }
     }
 
@@ -549,6 +595,16 @@ object ClientOnlyController {
         return candidates.firstOrNull { it !in recentTracks } ?: primary
     }
 
+    //? if >=1.21.11 {
+    /*private fun getClientBiomeMusicEvent(player: LocalPlayer): String? {
+        return try {
+            val bgMusic = player.entityLevel().environmentAttributes()
+                .getValue(net.minecraft.world.attribute.EnvironmentAttributes.BACKGROUND_MUSIC, player.blockPosition())
+            val music = bgMusic.defaultMusic().orElse(null) ?: return null
+            musicEventLocation(music).toString()
+        } catch (_: Exception) { null }
+    }*/
+    //?} else {
     private fun getClientBiomeMusicEvent(player: LocalPlayer): String? {
         return try {
             val music = player.entityLevel().getBiome(player.blockPosition()).value()
@@ -556,6 +612,7 @@ object ClientOnlyController {
             musicEventLocation(music).toString()
         } catch (_: Exception) { null }
     }
+    //?}
 
     private fun hasClientDragonFight(player: LocalPlayer): Boolean {
         return try {
@@ -624,6 +681,7 @@ object ClientOnlyController {
         customMinDelay = -1
         customMaxDelay = -1
         recentTracks.clear()
+        trackHistory.clear()
         lastMusicVol = -1f
         lastMasterVol = -1f
         playStartTime = 0

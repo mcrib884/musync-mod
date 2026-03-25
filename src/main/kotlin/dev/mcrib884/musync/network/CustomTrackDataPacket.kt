@@ -4,7 +4,11 @@ import net.minecraft.network.FriendlyByteBuf
 //? if neoforge {
 /*import net.minecraft.network.codec.StreamCodec
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload
+//? if >=1.21.11 {
+import net.minecraft.resources.Identifier as ResourceLocation
+//?} else {
 import net.minecraft.resources.ResourceLocation
+//?}
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
 //?} else if forge {
 import net.minecraftforge.network.NetworkEvent
