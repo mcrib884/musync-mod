@@ -1,7 +1,9 @@
 package dev.mcrib884.musync.server
 
 import dev.mcrib884.musync.network.PacketIO
+import dev.mcrib884.musync.network.TrackManifestEntry
 import java.io.File
+import java.security.MessageDigest
 import java.util.Locale
 
 object CustomTrackManager {
@@ -11,7 +13,7 @@ object CustomTrackManager {
     private val SUPPORTED_EXTENSIONS = setOf("ogg", "wav", "mp3")
     private val UNSAFE_CHARS = Regex("[^\\p{L}\\p{N}_\\-]")
 
-    private data class TrackInfo(val file: File, val size: Long)
+    private data class TrackInfo(val file: File, val size: Long, val sha256: String)
     @Volatile
     private var tracks: Map<String, TrackInfo> = emptyMap()
     @Volatile
@@ -49,9 +51,14 @@ object CustomTrackManager {
                 dev.mcrib884.musync.MuSyncLog.warn("Skipping custom track with invalid size: ${file.name} ($size bytes)")
                 continue
             }
+            val sha256 = sha256Of(file)
+            if (sha256 == null) {
+                dev.mcrib884.musync.MuSyncLog.warn("Skipping custom track with unreadable hash: ${file.name}")
+                continue
+            }
             val extension = file.extension.lowercase()
             val internalName = uniqueInternalName(baseName, extension, nextTracks)
-            nextTracks[internalName] = TrackInfo(file, size)
+            nextTracks[internalName] = TrackInfo(file, size, sha256)
             aliasCandidates.getOrPut(baseName) { mutableListOf() }.add(internalName)
             dev.mcrib884.musync.MuSyncLog.info("Indexed custom track: $internalName (${size} bytes)")
         }
@@ -114,9 +121,27 @@ object CustomTrackManager {
 
     fun getTrackCount(): Int = tracks.size
 
-    fun getManifest(): List<Pair<String, Long>> {
+    fun getManifest(): List<TrackManifestEntry> {
         return tracks.entries
             .sortedBy { it.key }
-            .map { (name, info) -> name to info.size }
+            .map { (name, info) -> TrackManifestEntry(name, info.size, info.sha256) }
+    }
+
+    private fun sha256Of(file: File): String? {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            file.inputStream().buffered().use { input ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    if (read > 0) digest.update(buffer, 0, read)
+                }
+            }
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (e: Exception) {
+            dev.mcrib884.musync.MuSyncLog.error("Failed to hash custom track ${file.name}: ${e.message}")
+            null
+        }
     }
 }

@@ -45,10 +45,12 @@ data class CustomTrackDataPacket(
         }
 
         fun decode(buf: FriendlyByteBuf): CustomTrackDataPacket {
+            val chunkIndex = buf.readInt().coerceAtLeast(0)
+            val totalChunks = buf.readInt().coerceIn(0, MAX_TOTAL_CHUNKS)
             return CustomTrackDataPacket(
-                trackName = buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH),
-                chunkIndex = buf.readInt().coerceAtLeast(0),
-                totalChunks = buf.readInt().coerceIn(0, MAX_TOTAL_CHUNKS),
+                trackName = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_NAME_LENGTH),
+                chunkIndex = chunkIndex,
+                totalChunks = totalChunks,
                 data = buf.readByteArray(CHUNK_SIZE)
             )
         }

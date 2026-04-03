@@ -18,9 +18,12 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 object ClientMusicPlayer {
-        private val loadExecutor = Executors.newSingleThreadExecutor { task ->
+    private fun createLoadExecutor() = Executors.newSingleThreadExecutor { task ->
         Thread(task, "MuSync-TrackLoader").apply { isDaemon = true }
     }
+
+    @Volatile
+    private var loadExecutor = createLoadExecutor()
     private var lastResolvedSound: String? = null
     private var currentTrack: String? = null
     private var trackStartTime: Long = 0
@@ -214,6 +217,9 @@ object ClientMusicPlayer {
     }
 
     private fun startAsyncLoad(trackId: String, startPositionMs: Long, specificSound: String, startPaused: Boolean) {
+        if (loadExecutor.isShutdown || loadExecutor.isTerminated) {
+            loadExecutor = createLoadExecutor()
+        }
         val mc = Minecraft.getInstance()
         stopMusicInternal()
 
@@ -673,6 +679,7 @@ object ClientMusicPlayer {
 
     fun fullReset() {
         clearLoadingState(cancelCurrentLoad = true, clearPending = true)
+        loadExecutor.shutdownNow()
         suppressVanillaMusic()
         stopMusicInternal()
         CustomTrackPlayer.stopAll()

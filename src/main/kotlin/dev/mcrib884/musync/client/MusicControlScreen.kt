@@ -66,8 +66,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var fieldBoxY = 0
     private var syncBtnX = 0
     private var syncBtnY = 0
-    private var hotloadBtnX = 0
-    private var hotloadBtnY = 0
+    private var settingsBtnX = 0
+    private var settingsBtnY = 0
     private var dimBtnX = 0
     private var dimBtnY = 0
     private val topBtnSize = 14
@@ -76,6 +76,9 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private var dimFlyoutOpen: Boolean = false
     private var displayedDuration: Long = 0
     private var displayedHasTrack: Boolean = false
+
+    private val theme: MuSyncThemePalette
+        get() = ClientTrackManager.getThemePreset().palette
 
     private val isOp: Boolean
         get() = ClientOnlyController.isActive || dev.mcrib884.musync.isOp(Minecraft.getInstance().player)
@@ -173,8 +176,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         viewedDimId = playerDim ?: "minecraft:overworld"
         syncBtnX = panelX + 4
         syncBtnY = panelY + 4
-        hotloadBtnX = syncBtnX
-        hotloadBtnY = syncBtnY + topBtnSize + topBtnGap
+        settingsBtnX = syncBtnX
+        settingsBtnY = syncBtnY + topBtnSize + topBtnGap
         dimBtnX = panelX + panelW - topBtnSize - 4
         dimBtnY = panelY + 4
         volumeBarX = dimBtnX + (topBtnSize - volumeBarW) / 2
@@ -193,22 +196,22 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         renderBackground(graphics)
         //?}
 
-        graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, 0xFF1A1A2E.toInt())
-        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0xE0101020.toInt())
-        graphics.fill(panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
+        graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, theme.frameColor)
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, theme.panelColor)
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + 2, theme.accentColor)
 
         val syncingNow = effectiveStatus()?.syncOverworld == true
         val dimBtnLabel = if (syncingNow) "\u00A7aO" else getDimLabel(viewedDimId)
         val syncBtnHovered = mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize
-        val hotloadBtnHovered = mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize
+        val settingsBtnHovered = mouseX in settingsBtnX until settingsBtnX + topBtnSize && mouseY in settingsBtnY until settingsBtnY + topBtnSize
         val dimBtnHovered = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
         drawCustomTopBtn(graphics, syncBtnX, syncBtnY, "\u21C4", syncBtnHovered)
-        drawHotloadTopBtn(graphics, hotloadBtnX, hotloadBtnY, hotloadBtnHovered)
+        drawCustomTopBtn(graphics, settingsBtnX, settingsBtnY, "\u2699", settingsBtnHovered)
         drawCustomTopBtn(graphics, dimBtnX, dimBtnY, dimBtnLabel, dimBtnHovered)
 
         val cx = panelX + panelW / 2
 
-        graphics.drawCenteredString(font, "\u266B MuSync \u266B", cx, panelY + 8, 0xFF00CC66.toInt())
+        drawCenteredThemeText(graphics, "\u266B MuSync \u266B", cx, panelY + 8, theme.accentColor)
 
         val status = effectiveStatus()
         syncDelayFields(status)
@@ -258,10 +261,10 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             "No track"
         }
 
-        graphics.drawCenteredString(font, trackText, cx, panelY + 26, 0xFFFFFFFF.toInt())
+        drawCenteredThemeText(graphics, trackText, cx, panelY + 26, 0xFFFFFFFF.toInt())
 
         if (displayTrack != null && displayResolved.isNotEmpty()) {
-            graphics.drawCenteredString(font, formatSoundEvent(displayTrack), cx, panelY + 38, 0xFF777799.toInt())
+            drawCenteredThemeText(graphics, formatSoundEvent(displayTrack), cx, panelY + 38, theme.statusIdleColor)
         }
 
         val statusText = when {
@@ -275,12 +278,12 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             else -> "\u23F9 Stopped"
         }
         val statusColor = when {
-            localLoading -> 0xFF66CCFF.toInt()
-            displayIsPlaying -> 0xFF55FF55.toInt()
-            displayWaiting -> 0xFFFFAA00.toInt()
-            else -> 0xFFAAAAAA.toInt()
+            localLoading -> theme.statusLoadingColor
+            displayIsPlaying -> theme.statusPlayingColor
+            displayWaiting -> theme.statusWaitingColor
+            else -> theme.statusIdleColor
         }
-        graphics.drawCenteredString(font, statusText, cx, panelY + 52, statusColor)
+        drawCenteredThemeText(graphics, statusText, cx, panelY + 52, statusColor)
         drawVolumeBar(graphics, volumeBarX, volumeBarY, volumeBarW, volumeBarH)
 
         val actualProgress = if (displayDuration > 0) (displayPosition.toFloat() / displayDuration.toFloat()).coerceIn(0f, 1f) else 0f
@@ -291,17 +294,17 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val progress = if (draggingSeekBar) dragSeekProgress else if (holdingSeek) seekHoldProgress else actualProgress
         val filledW = (barW * progress).toInt()
 
-        graphics.fill(barX, barY, barX + barW, barY + barH, 0xFF222244.toInt())
+        graphics.fill(barX, barY, barX + barW, barY + barH, theme.progressBackgroundColor)
         if (filledW > 0) {
-            val barColor = if (draggingSeekBar) 0xFF33AAFF.toInt() else 0xFF00CC66.toInt()
-            val barHighlight = if (draggingSeekBar) 0xFF55CCFF.toInt() else 0xFF00EE88.toInt()
+            val barColor = if (draggingSeekBar) theme.statusLoadingColor else theme.progressFillColor
+            val barHighlight = if (draggingSeekBar) theme.statusLoadingColor else theme.progressFillHighlightColor
             graphics.fill(barX, barY, barX + filledW, barY + barH, barColor)
             graphics.fill(barX, barY, barX + filledW, barY + barH / 2, barHighlight)
         }
-        graphics.fill(barX - 1, barY - 1, barX + barW + 1, barY, 0xFF333355.toInt())
-        graphics.fill(barX - 1, barY + barH, barX + barW + 1, barY + barH + 1, 0xFF333355.toInt())
-        graphics.fill(barX - 1, barY, barX, barY + barH, 0xFF333355.toInt())
-        graphics.fill(barX + barW, barY, barX + barW + 1, barY + barH, 0xFF333355.toInt())
+        graphics.fill(barX - 1, barY - 1, barX + barW + 1, barY, theme.progressBorderColor)
+        graphics.fill(barX - 1, barY + barH, barX + barW + 1, barY + barH + 1, theme.progressBorderColor)
+        graphics.fill(barX - 1, barY, barX, barY + barH, theme.progressBorderColor)
+        graphics.fill(barX + barW, barY, barX + barW + 1, barY + barH, theme.progressBorderColor)
 
         if (filledW > 0 && displayDuration > 0) {
             val headX = barX + filledW
@@ -316,8 +319,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         } else {
             "0:00 / 0:00"
         }
-        val timeColor = if (draggingSeekBar || holdingSeek) 0xFF55CCFF.toInt() else 0xFF999999.toInt()
-        graphics.drawCenteredString(font, timeText, cx, barY + barH + 3, timeColor)
+        val timeColor = if (draggingSeekBar || holdingSeek) theme.statusLoadingColor else theme.statusIdleColor
+        drawCenteredThemeText(graphics, timeText, cx, barY + barH + 3, timeColor)
 
         pauseIsPlaying = displayIsPlaying
         val pauseLabel = if (localLoading) "\u23F3 Wait" else if (pauseIsPlaying) "\u23F8 Pause" else "\u25B6 Play"
@@ -358,19 +361,19 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
         cacheBtnBounds?.let { b ->
             val hov = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
-            val bg = if (hov) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
+            val bg = if (hov) theme.buttonHoverColor else theme.buttonColor
             graphics.fill(b.x, b.y, b.x + b.w, b.y + b.h, bg)
-            graphics.fill(b.x, b.y, b.x + b.w, b.y + 1, 0xFF00CC66.toInt())
-            graphics.fill(b.x, b.y, b.x + 1, b.y + b.h, 0xFF00CC66.toInt())
-            graphics.fill(b.x + b.w - 1, b.y, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
-            graphics.fill(b.x, b.y + b.h - 1, b.x + b.w, b.y + b.h, 0xFF00CC66.toInt())
+            graphics.fill(b.x, b.y, b.x + b.w, b.y + 1, theme.accentColor)
+            graphics.fill(b.x, b.y, b.x + 1, b.y + b.h, theme.accentColor)
+            graphics.fill(b.x + b.w - 1, b.y, b.x + b.w, b.y + b.h, theme.accentColor)
+            graphics.fill(b.x, b.y + b.h - 1, b.x + b.w, b.y + b.h, theme.accentColor)
             val cacheEnabled = ClientTrackManager.cacheEnabled
             val cacheLabel = if (cacheEnabled) "Cache ON" else "Cache OFF"
-            val cacheLabelColor = if (cacheEnabled) 0xFF00FF88.toInt() else 0xFFFF6655.toInt()
+            val cacheLabelColor = if (cacheEnabled) theme.accentStrongColor else 0xFFFF6655.toInt()
             val indicatorX = b.x + 6
             val indicatorY = b.y + (b.h - 6) / 2
             drawCacheIndicator(graphics, indicatorX, indicatorY, 6, cacheEnabled, cacheLabelColor)
-            graphics.drawString(font, cacheLabel, indicatorX + 10, b.y + (b.h - 8) / 2, cacheLabelColor)
+            drawThemeText(graphics, cacheLabel, indicatorX + 10, b.y + (b.h - 8) / 2, cacheLabelColor)
         }
 
         repeatBtnBounds?.let { b ->
@@ -384,40 +387,40 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             MusicStatusPacket.PlayMode.SINGLE_TRACK -> "Single"
             else -> "---"
         }
-        graphics.drawCenteredString(font, "Mode: $modeText", cx, panelY + 128, 0xFF666688.toInt())
+        drawCenteredThemeText(graphics, "Mode: $modeText", cx, panelY + 128, theme.statusIdleColor)
 
         val delayTextY = fieldBoxY + 4
         val dashX = minFieldX + 50 + 4
         val minFocused = minDelayField?.isFocused == true
         val maxFocused = maxDelayField?.isFocused == true
         for ((fx, focused) in listOf(Pair(minFieldX, minFocused), Pair(maxFieldX, maxFocused))) {
-            val bc = if (focused) 0xFF33EE88.toInt() else 0xFF00CC66.toInt()
-            graphics.fill(fx, fieldBoxY, fx + 50, fieldBoxY + 16, 0xFF1C1C2A.toInt())
+            val bc = if (focused) theme.accentStrongColor else theme.accentColor
+            graphics.fill(fx, fieldBoxY, fx + 50, fieldBoxY + 16, theme.buttonColor)
             graphics.fill(fx, fieldBoxY, fx + 50, fieldBoxY + 1, bc)
             graphics.fill(fx, fieldBoxY, fx + 1, fieldBoxY + 16, bc)
             graphics.fill(fx + 49, fieldBoxY, fx + 50, fieldBoxY + 16, bc)
             graphics.fill(fx, fieldBoxY + 15, fx + 50, fieldBoxY + 16, bc)
         }
-        graphics.drawString(font, "Delay:", minFieldX - font.width("Delay:") - 4, delayTextY, 0xFF888888.toInt())
-        graphics.drawString(font, "-", dashX, delayTextY, 0xFF888888.toInt())
-        graphics.drawString(font, "ticks", maxFieldX + 50 + 4, delayTextY, 0xFF666666.toInt())
+        drawThemeText(graphics, "Delay:", minFieldX - font.width("Delay:") - 4, delayTextY, theme.statusIdleColor)
+        drawThemeText(graphics, "-", dashX, delayTextY, theme.statusIdleColor)
+        drawThemeText(graphics, "ticks", maxFieldX + 50 + 4, delayTextY, theme.statusIdleColor)
 
         val activeDelayY = panelY + 190
         val dimLabel = getDimDisplayName(viewedDimId)
         if (status != null && status.customMinDelay >= 0 && status.customMaxDelay >= 0) {
             val dText = "$dimLabel: ${status.customMinDelay}-${status.customMaxDelay} ticks (${formatTicksShort(status.customMinDelay)}-${formatTicksShort(status.customMaxDelay)})"
-            graphics.drawCenteredString(font, dText, cx, activeDelayY, 0xFF55AA77.toInt())
+            drawCenteredThemeText(graphics, dText, cx, activeDelayY, theme.statusPlayingColor)
         } else {
-            graphics.drawCenteredString(font, "$dimLabel: Vanilla/mod defaults", cx, activeDelayY, 0xFF666666.toInt())
+            drawCenteredThemeText(graphics, "$dimLabel: Vanilla/mod defaults", cx, activeDelayY, theme.statusIdleColor)
         }
 
         if (!isOp) {
-            graphics.drawCenteredString(font, "\u26A0 View only (OP required)", cx, panelY + panelH - 42, 0xFFFF5555.toInt())
+            drawCenteredThemeText(graphics, "\u26A0 View only (OP required)", cx, panelY + panelH - 42, 0xFFFF5555.toInt())
         }
 
         val queueSize = status?.queue?.size ?: 0
         if (queueSize > 0) {
-            graphics.drawCenteredString(font, "Queue: $queueSize track${if (queueSize > 1) "s" else ""}", cx, panelY + 138, 0xFF666688.toInt())
+            drawCenteredThemeText(graphics, "Queue: $queueSize track${if (queueSize > 1) "s" else ""}", cx, panelY + 138, theme.statusIdleColor)
         }
 
         super.render(graphics, mouseX, mouseY, partialTick)
@@ -435,7 +438,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 2, 0xFF00CC66.toInt())
 
         val syncHov1919 = mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize
-        val hotloadHov1919 = mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize
+        val settingsHov1919 = mouseX in settingsBtnX until settingsBtnX + topBtnSize && mouseY in settingsBtnY until settingsBtnY + topBtnSize
         val dimHov1919 = mouseX in dimBtnX until dimBtnX + topBtnSize && mouseY in dimBtnY until dimBtnY + topBtnSize
         val syncing1919 = effectiveStatus()?.syncOverworld == true
         val dimBtnLbl1919 = if (syncing1919) "\u00A7aO" else getDimLabel(viewedDimId)
@@ -444,14 +447,14 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         GuiComponent.fill(poseStack, syncBtnX, syncBtnY, syncBtnX + 1, syncBtnY + topBtnSize, 0xFF00CC66.toInt())
         GuiComponent.fill(poseStack, syncBtnX + topBtnSize - 1, syncBtnY, syncBtnX + topBtnSize, syncBtnY + topBtnSize, 0xFF00CC66.toInt())
         GuiComponent.fill(poseStack, syncBtnX, syncBtnY + topBtnSize - 1, syncBtnX + topBtnSize, syncBtnY + topBtnSize, 0xFF00CC66.toInt())
-        GuiComponent.drawString(poseStack, font, "\u21C4", syncBtnX + (topBtnSize - font.width("\u21C4")) / 2, syncBtnY + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
-        drawHotloadTopBtn1919(poseStack, hotloadBtnX, hotloadBtnY, hotloadHov1919)
+        GuiComponent.drawString(poseStack, font, "\u21C4", syncBtnX + (topBtnSize - font.width("\u21C4")) / 2, syncBtnY + (topBtnSize - 8) / 2, theme.buttonTextColor)
+        drawCustomTopBtn1919(poseStack, settingsBtnX, settingsBtnY, "\u2699", settingsHov1919)
         GuiComponent.fill(poseStack, dimBtnX, dimBtnY, dimBtnX + topBtnSize, dimBtnY + topBtnSize, if (dimHov1919) 0xFF334433.toInt() else 0xFF1C1C2A.toInt())
         GuiComponent.fill(poseStack, dimBtnX, dimBtnY, dimBtnX + topBtnSize, dimBtnY + 1, 0xFF00CC66.toInt())
         GuiComponent.fill(poseStack, dimBtnX, dimBtnY, dimBtnX + 1, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
         GuiComponent.fill(poseStack, dimBtnX + topBtnSize - 1, dimBtnY, dimBtnX + topBtnSize, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
         GuiComponent.fill(poseStack, dimBtnX, dimBtnY + topBtnSize - 1, dimBtnX + topBtnSize, dimBtnY + topBtnSize, 0xFF00CC66.toInt())
-        GuiComponent.drawString(poseStack, font, dimBtnLbl1919, dimBtnX + (topBtnSize - font.width(dimBtnLbl1919)) / 2, dimBtnY + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
+        GuiComponent.drawString(poseStack, font, dimBtnLbl1919, dimBtnX + (topBtnSize - font.width(dimBtnLbl1919)) / 2, dimBtnY + (topBtnSize - 8) / 2, theme.buttonTextColor)
 
         val cx = panelX + panelW / 2
 
@@ -675,8 +678,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize) {
             renderTooltip(poseStack, Component.literal("Sync with server"), mouseX, mouseY)
         }
-        if (mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize) {
-            renderTooltip(poseStack, Component.literal("Hotload custom tracks"), mouseX, mouseY)
+        if (mouseX in settingsBtnX until settingsBtnX + topBtnSize && mouseY in settingsBtnY until settingsBtnY + topBtnSize) {
+            renderTooltip(poseStack, Component.literal("Open settings"), mouseX, mouseY)
         }
         repeatBtnBounds?.let { b ->
             if (mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) {
@@ -715,8 +718,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
             sendControl(MusicControlPacket.Action.REQUEST_SYNC)
             return true
         }
-        if (button == 0 && mxi in hotloadBtnX until hotloadBtnX + topBtnSize && myi in hotloadBtnY until hotloadBtnY + topBtnSize) {
-            sendControl(MusicControlPacket.Action.HOTLOAD_TRACKS)
+        if (button == 0 && mxi in settingsBtnX until settingsBtnX + topBtnSize && myi in settingsBtnY until settingsBtnY + topBtnSize) {
+            Minecraft.getInstance().setScreen(MusicSettingsScreen())
             return true
         }
         if (button == 0 && prevBounds?.let { mxi in it.x until it.x + it.w && myi in it.y until it.y + it.h && it.active } == true) {
@@ -917,72 +920,81 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     //? if >=1.20 {
     private fun drawTopBtnFrame(graphics: GuiGraphics, x: Int, y: Int, hovered: Boolean) {
-        val bg = if (hovered) 0xFF334433.toInt() else 0xFF1C1C2A.toInt()
+        val bg = if (hovered) theme.buttonHoverColor else theme.buttonColor
         graphics.fill(x, y, x + topBtnSize, y + topBtnSize, bg)
-        graphics.fill(x, y, x + topBtnSize, y + 1, 0xFF00CC66.toInt())
-        graphics.fill(x, y, x + 1, y + topBtnSize, 0xFF00CC66.toInt())
-        graphics.fill(x + topBtnSize - 1, y, x + topBtnSize, y + topBtnSize, 0xFF00CC66.toInt())
-        graphics.fill(x, y + topBtnSize - 1, x + topBtnSize, y + topBtnSize, 0xFF00CC66.toInt())
+        graphics.fill(x, y, x + topBtnSize, y + 1, theme.accentColor)
+        graphics.fill(x, y, x + 1, y + topBtnSize, theme.accentColor)
+        graphics.fill(x + topBtnSize - 1, y, x + topBtnSize, y + topBtnSize, theme.accentColor)
+        graphics.fill(x, y + topBtnSize - 1, x + topBtnSize, y + topBtnSize, theme.accentColor)
     }
 
     private fun drawCustomTopBtn(graphics: GuiGraphics, x: Int, y: Int, label: String, hovered: Boolean) {
         drawTopBtnFrame(graphics, x, y, hovered)
-        graphics.drawString(font, label, x + (topBtnSize - font.width(label)) / 2, y + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
-    }
-
-    private fun drawHotloadTopBtn(graphics: GuiGraphics, x: Int, y: Int, hovered: Boolean) {
-        drawTopBtnFrame(graphics, x, y, hovered)
-        drawHotloadIcon(graphics, x, y, 0xFFFFFFFF.toInt())
+        graphics.drawString(font, label, x + (topBtnSize - font.width(label)) / 2, y + (topBtnSize - 8) / 2, theme.buttonTextColor, useTextShadow())
     }
 
     private fun drawCustomBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean = true) {
-        val bg = when { !active -> 0xFF111118.toInt(); hovered -> 0xFF334433.toInt(); else -> 0xFF1C1C2A.toInt() }
-        val borderColor = if (active) 0xFF00CC66.toInt() else 0xFF336644.toInt()
-        val textColor = if (active) 0xFFFFFFFF.toInt() else 0xFF667766.toInt()
+        val bg = when { !active -> theme.buttonDisabledColor; hovered -> theme.buttonHoverColor; else -> theme.buttonColor }
+        val borderColor = if (active) theme.accentColor else theme.buttonDisabledBorderColor
+        val textColor = if (active) theme.buttonTextColor else theme.buttonDisabledTextColor
         graphics.fill(x, y, x + w, y + h, bg)
         graphics.fill(x, y, x + w, y + 1, borderColor)
         graphics.fill(x, y, x + 1, y + h, borderColor)
         graphics.fill(x + w - 1, y, x + w, y + h, borderColor)
         graphics.fill(x, y + h - 1, x + w, y + h, borderColor)
-        graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor)
+        graphics.drawString(font, label, x + (w - font.width(label)) / 2, y + (h - 8) / 2, textColor, useTextShadow())
     }
+
+    //? if >=1.20 {
+    private fun useTextShadow(): Boolean = !ClientTrackManager.getThemePreset().id.startsWith("clear_")
+
+    private fun drawThemeText(graphics: GuiGraphics, text: String, x: Int, y: Int, color: Int) {
+        graphics.drawString(font, text, x, y, color, useTextShadow())
+    }
+
+    private fun drawCenteredThemeText(graphics: GuiGraphics, text: String, centerX: Int, y: Int, color: Int) {
+        drawThemeText(graphics, text, centerX - font.width(text) / 2, y, color)
+    }
+    //?} else {
+    /*private fun useTextShadow(): Boolean = true
+
+    private fun drawThemeText(unused: Any, text: String, x: Int, y: Int, color: Int) {}
+
+    private fun drawCenteredThemeText(unused: Any, text: String, centerX: Int, y: Int, color: Int) {}*/
+    //?}
 
     //? if >=1.20 {
     private fun drawRepeatBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, hovered: Boolean) {
         val mode = effectiveRepeatMode()
         val active = mode != MusicStatusPacket.RepeatMode.OFF
-        val bg = when { hovered -> 0xFF334433.toInt(); active -> 0xFF1C2C1C.toInt(); else -> 0xFF1C1C2A.toInt() }
-        val border = if (active) 0xFF00CC66.toInt() else 0xFF333355.toInt()
+        val bg = when { hovered -> theme.buttonHoverColor; active -> theme.listSelectedColor; else -> theme.buttonColor }
+        val border = if (active) theme.accentColor else theme.progressBorderColor
         graphics.fill(x, y, x + w, y + h, bg)
         graphics.fill(x, y, x + w, y + 1, border)
         graphics.fill(x, y, x + 1, y + h, border)
         graphics.fill(x + w - 1, y, x + w, y + h, border)
         graphics.fill(x, y + h - 1, x + w, y + h, border)
-        val iconColor = if (active) 0xFF00EE88.toInt() else 0xFF888899.toInt()
+        val iconColor = if (active) theme.accentStrongColor else theme.statusIdleColor
         val cx = x + w / 2
         val cy = y + h / 2
         when (mode) {
             MusicStatusPacket.RepeatMode.OFF -> {
-                // Right arrow: normal "play next" behavior
                 graphics.fill(cx - 3, cy - 1, cx + 2, cy + 2, iconColor)
                 graphics.fill(cx + 2, cy - 2, cx + 3, cy + 3, iconColor)
                 graphics.fill(cx + 3, cy - 1, cx + 4, cy + 2, iconColor)
                 graphics.fill(cx + 4, cy, cx + 5, cy + 1, iconColor)
             }
             MusicStatusPacket.RepeatMode.REPEAT_TRACK -> {
-                // Loop arrow with "1" dot inside
                 graphics.fill(cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
                 graphics.fill(cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
                 graphics.fill(cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
                 graphics.fill(cx - 4, cy - 1, cx - 3, cy + 3, iconColor)
                 graphics.fill(cx - 5, cy - 2, cx - 4, cy - 1, iconColor)
                 graphics.fill(cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
-                // "1" indicator
                 graphics.fill(cx, cy - 1, cx + 1, cy + 1, iconColor)
                 graphics.fill(cx - 1, cy - 1, cx, cy, iconColor)
             }
             MusicStatusPacket.RepeatMode.REPEAT_PLAYLIST -> {
-                // Loop arrow without dot
                 graphics.fill(cx - 4, cy - 3, cx + 3, cy - 2, iconColor)
                 graphics.fill(cx + 3, cy - 3, cx + 4, cy + 1, iconColor)
                 graphics.fill(cx - 3, cy + 2, cx + 4, cy + 3, iconColor)
@@ -991,7 +1003,6 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 graphics.fill(cx - 3, cy - 4, cx - 2, cy - 3, iconColor)
             }
             MusicStatusPacket.RepeatMode.SHUFFLE -> {
-                // Crossed arrows
                 graphics.fill(cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
                 graphics.fill(cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
                 graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
@@ -1005,7 +1016,6 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
                 graphics.fill(cx + 4, cy + 1, cx + 5, cy + 4, iconColor)
             }
             MusicStatusPacket.RepeatMode.SHUFFLE_REPEAT -> {
-                // Crossed arrows + center dot
                 graphics.fill(cx - 4, cy - 3, cx - 3, cy - 2, iconColor)
                 graphics.fill(cx - 3, cy - 2, cx - 2, cy - 1, iconColor)
                 graphics.fill(cx - 1, cy - 1, cx + 1, cy + 1, iconColor)
@@ -1022,13 +1032,6 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         }
     }
     //?}
-
-    private fun drawHotloadIcon(graphics: GuiGraphics, x: Int, y: Int, color: Int) {
-        graphics.fill(x + 6, y + 2, x + 8, y + 8, color)
-        graphics.fill(x + 4, y + 6, x + 10, y + 8, color)
-        graphics.fill(x + 3, y + 9, x + 11, y + 10, color)
-        graphics.fill(x + 4, y + 10, x + 10, y + 11, color)
-    }
 
     private fun drawSpeakerIcon(graphics: GuiGraphics, x: Int, y: Int, color: Int) {
         graphics.fill(x, y + 3, x + 2, y + 7, color)
@@ -1068,19 +1071,19 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private fun drawVolumeBar(graphics: GuiGraphics, x: Int, y: Int, width: Int, height: Int) {
         val volume = getMusicVolume()
         val filled = (height * volume).toInt()
-        graphics.fill(x, y, x + width, y + height, 0xFF1A1F28.toInt())
+        graphics.fill(x, y, x + width, y + height, theme.progressBackgroundColor)
         if (filled > 0) {
-            graphics.fill(x, y + height - filled, x + width, y + height, 0xFF3FBF7F.toInt())
-            graphics.fill(x, y + height - filled, x + width, y + height - filled + 1, 0xFF79E6A7.toInt())
+            graphics.fill(x, y + height - filled, x + width, y + height, theme.progressFillColor)
+            graphics.fill(x, y + height - filled, x + width, y + height - filled + 1, theme.progressFillHighlightColor)
         }
-        graphics.fill(x - 1, y - 1, x + width + 1, y, 0xFF335544.toInt())
-        graphics.fill(x - 1, y + height, x + width + 1, y + height + 1, 0xFF335544.toInt())
-        graphics.fill(x - 1, y, x, y + height, 0xFF335544.toInt())
-        graphics.fill(x + width, y, x + width + 1, y + height, 0xFF335544.toInt())
+        graphics.fill(x - 1, y - 1, x + width + 1, y, theme.progressBorderColor)
+        graphics.fill(x - 1, y + height, x + width + 1, y + height + 1, theme.progressBorderColor)
+        graphics.fill(x - 1, y, x, y + height, theme.progressBorderColor)
+        graphics.fill(x + width, y, x + width + 1, y + height, theme.progressBorderColor)
         if (volume <= 0f) {
             drawMutedSpeakerIcon(graphics, x - 1, y + height + 4, 0xFFFF8866.toInt())
         } else {
-            drawSpeakerIcon(graphics, x - 1, y + height + 4, 0xFF88CC99.toInt())
+            drawSpeakerIcon(graphics, x - 1, y + height + 4, theme.accentStrongColor)
         }
     }
 
@@ -1138,8 +1141,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         if (mouseX in syncBtnX until syncBtnX + topBtnSize && mouseY in syncBtnY until syncBtnY + topBtnSize) {
             graphics.renderTooltipCompat(font, listOf(Component.literal("Sync with server").visualOrderText), mouseX, mouseY)
         }
-        if (mouseX in hotloadBtnX until hotloadBtnX + topBtnSize && mouseY in hotloadBtnY until hotloadBtnY + topBtnSize) {
-            graphics.renderTooltipCompat(font, listOf(Component.literal("Hotload custom tracks").visualOrderText), mouseX, mouseY)
+        if (mouseX in settingsBtnX until settingsBtnX + topBtnSize && mouseY in settingsBtnY until settingsBtnY + topBtnSize) {
+            graphics.renderTooltipCompat(font, listOf(Component.literal("Open settings").visualOrderText), mouseX, mouseY)
         }
         repeatBtnBounds?.let { b ->
             if (mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h) {
@@ -1209,19 +1212,7 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
 
     private fun drawCustomTopBtn1919(poseStack: PoseStack, x: Int, y: Int, label: String, hovered: Boolean) {
         drawTopBtnFrame1919(poseStack, x, y, hovered)
-        GuiComponent.drawString(poseStack, font, label, x + (topBtnSize - font.width(label)) / 2, y + (topBtnSize - 8) / 2, 0xFFFFFFFF.toInt())
-    }
-
-    private fun drawHotloadTopBtn1919(poseStack: PoseStack, x: Int, y: Int, hovered: Boolean) {
-        drawTopBtnFrame1919(poseStack, x, y, hovered)
-        drawHotloadIcon1919(poseStack, x, y, 0xFFFFFFFF.toInt())
-    }
-
-    private fun drawHotloadIcon1919(poseStack: PoseStack, x: Int, y: Int, color: Int) {
-        GuiComponent.fill(poseStack, x + 6, y + 2, x + 8, y + 8, color)
-        GuiComponent.fill(poseStack, x + 4, y + 6, x + 10, y + 8, color)
-        GuiComponent.fill(poseStack, x + 3, y + 9, x + 11, y + 10, color)
-        GuiComponent.fill(poseStack, x + 4, y + 10, x + 10, y + 11, color)
+        GuiComponent.drawString(poseStack, font, label, x + (topBtnSize - font.width(label)) / 2, y + (topBtnSize - 8) / 2, theme.buttonTextColor)
     }
 
     private fun drawSpeakerIcon1919(poseStack: PoseStack, x: Int, y: Int, color: Int) {
@@ -1437,6 +1428,8 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
     private fun formatSoundEvent(id: String): String {
         return if (id.startsWith("custom:")) {
             dev.mcrib884.musync.TrackNames.formatTrack(id)
+        } else if (id.contains("|alias:")) {
+            dev.mcrib884.musync.TrackNames.formatTrack(id)
         } else {
             dev.mcrib884.musync.TrackNames.formatPoolName(id)
         }
@@ -1459,4 +1452,243 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         val s = totalSec % 60
         return if (m > 0) "${m}m ${s}s" else "${s}s"
     }
+}
+
+class MusicSettingsScreen : Screen(Component.literal("MuSync Settings")) {
+
+    private data class BtnBounds(val x: Int, val y: Int, val w: Int, val h: Int, val label: String, var active: Boolean = true)
+
+    private val panelW = 300
+    private val panelH = 198
+    private var panelX = 0
+    private var panelY = 0
+
+    private var backBounds: BtnBounds? = null
+    private var cacheBounds: BtnBounds? = null
+    private var themeBounds: BtnBounds? = null
+    private var hotloadBounds: BtnBounds? = null
+
+    private val isOp: Boolean
+        get() = ClientOnlyController.isActive || dev.mcrib884.musync.isOp(Minecraft.getInstance().player)
+
+    private val theme: MuSyncThemePalette
+        get() = ClientTrackManager.getThemePreset().palette
+
+    //? if >=1.20 {
+    private fun useTextShadow(): Boolean = !ClientTrackManager.getThemePreset().id.startsWith("clear_")
+
+    private fun drawThemeText(graphics: GuiGraphics, text: String, x: Int, y: Int, color: Int) {
+        graphics.drawString(font, text, x, y, color, useTextShadow())
+    }
+
+    private fun drawCenteredThemeText(graphics: GuiGraphics, text: String, centerX: Int, y: Int, color: Int) {
+        drawThemeText(graphics, text, centerX - font.width(text) / 2, y, color)
+    }
+    //?} else {
+    /*private fun useTextShadow(): Boolean = true
+
+    private fun drawThemeText(unused: Any, text: String, x: Int, y: Int, color: Int) {}
+
+    private fun drawCenteredThemeText(unused: Any, text: String, centerX: Int, y: Int, color: Int) {}*/
+    //?}
+
+    override fun init() {
+        super.init()
+        panelX = (width - panelW) / 2
+        panelY = (height - panelH) / 2
+
+        val left = panelX + 12
+        val right = panelX + panelW - 12
+        val btnW = right - left
+        cacheBounds = BtnBounds(left, panelY + 48, btnW, 18, "Cache")
+        themeBounds = BtnBounds(left, panelY + 72, btnW, 18, "Theme")
+        hotloadBounds = BtnBounds(left, panelY + 96, btnW, 18, "Hotload tracks", isOp)
+        backBounds = BtnBounds(panelX + panelW - 72, panelY + panelH - 24, 60, 16, "Back")
+    }
+
+    //? if >=1.21 {
+    /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
+    //?}
+
+    //? if >=1.20 {
+    override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
+        //? if >=1.21 {
+        /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
+        //?} else {
+        renderBackground(graphics)
+        //?}
+
+        graphics.fill(panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, theme.frameColor)
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, theme.panelColor)
+        graphics.fill(panelX, panelY, panelX + panelW, panelY + 2, theme.accentColor)
+
+        val cx = panelX + panelW / 2
+        drawCenteredThemeText(graphics, "MuSync Settings", cx, panelY + 8, theme.accentColor)
+        drawThemeText(graphics, "Technical options live here.", panelX + 12, panelY + 24, theme.statusIdleColor)
+
+        val cacheEnabled = ClientTrackManager.cacheEnabled
+        cacheBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            val label = "Cache: " + if (cacheEnabled) "Enabled" else "Disabled"
+            drawBtn(graphics, b.x, b.y, b.w, b.h, label, hovered, true)
+        }
+
+        val themePreset = ClientTrackManager.getThemePreset()
+        themeBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn(graphics, b.x, b.y, b.w, b.h, "Theme: ${themePreset.label}", hovered, true)
+        }
+
+        hotloadBounds?.let { b ->
+            b.active = isOp
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn(graphics, b.x, b.y, b.w, b.h, b.label, hovered, b.active)
+        }
+
+        backBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn(graphics, b.x, b.y, b.w, b.h, b.label, hovered, true)
+        }
+
+        if (!isOp) {
+            drawThemeText(graphics, "Hotload requires operator permissions.", panelX + 12, panelY + panelH - 38, 0xFFFF6666.toInt())
+        }
+
+        super.render(graphics, mouseX, mouseY, partialTick)
+    }
+    //?} else {
+    /*override fun render(poseStack: PoseStack, mouseX: Int, mouseY: Int, partialTick: Float) {
+        renderBackground(poseStack)
+        GuiComponent.fill(poseStack, panelX - 2, panelY - 2, panelX + panelW + 2, panelY + panelH + 2, theme.frameColor)
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + panelH, theme.panelColor)
+        GuiComponent.fill(poseStack, panelX, panelY, panelX + panelW, panelY + 2, theme.accentColor)
+
+        val cx = panelX + panelW / 2
+        GuiComponent.drawCenteredString(poseStack, font, "MuSync Settings", cx, panelY + 8, theme.accentColor)
+        GuiComponent.drawString(poseStack, font, "Technical options live here.", panelX + 12, panelY + 24, theme.statusIdleColor)
+
+        val cacheEnabled = ClientTrackManager.cacheEnabled
+        cacheBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            val label = "Cache: " + if (cacheEnabled) "Enabled" else "Disabled"
+            drawBtn1919(poseStack, b.x, b.y, b.w, b.h, label, hovered, true)
+        }
+
+        val themePreset = ClientTrackManager.getThemePreset()
+        themeBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn1919(poseStack, b.x, b.y, b.w, b.h, "Theme: ${themePreset.label}", hovered, true)
+        }
+
+        hotloadBounds?.let { b ->
+            b.active = isOp
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hovered, b.active)
+        }
+
+        backBounds?.let { b ->
+            val hovered = mouseX in b.x until b.x + b.w && mouseY in b.y until b.y + b.h
+            drawBtn1919(poseStack, b.x, b.y, b.w, b.h, b.label, hovered, true)
+        }
+
+        if (!isOp) {
+            GuiComponent.drawString(poseStack, font, "Hotload requires operator permissions.", panelX + 12, panelY + panelH - 38, 0xFFFF6666.toInt())
+        }
+
+        super.render(poseStack, mouseX, mouseY, partialTick)
+    }*/
+    //?}
+
+    private fun handleMouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean? {
+        if (button != 0) return null
+        val mx = mouseX.toInt()
+        val my = mouseY.toInt()
+
+        if (cacheBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+            ClientTrackManager.setCacheEnabled(!ClientTrackManager.cacheEnabled)
+            return true
+        }
+
+        if (themeBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+            ClientTrackManager.cycleTheme()
+            return true
+        }
+
+        if (hotloadBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h && it.active } == true) {
+            if (!ClientOnlyController.isActive) {
+                PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.HOTLOAD_TRACKS, null, null))
+            }
+            return true
+        }
+
+        if (backBounds?.let { mx in it.x until it.x + it.w && my in it.y until it.y + it.h } == true) {
+            Minecraft.getInstance().setScreen(MusicControlScreen())
+            return true
+        }
+        return null
+    }
+
+    //? if >=1.21.11 {
+    /*override fun mouseClicked(event: net.minecraft.client.input.MouseButtonEvent, bl: Boolean): Boolean {
+        return handleMouseClicked(event.x(), event.y(), event.button()) ?: super.mouseClicked(event, bl)
+    }*/
+    //?} else {
+    override fun mouseClicked(mouseX: Double, mouseY: Double, button: Int): Boolean {
+        return handleMouseClicked(mouseX, mouseY, button) ?: super.mouseClicked(mouseX, mouseY, button)
+    }
+    //?}
+
+    override fun isPauseScreen(): Boolean = false
+
+    //? if >=1.21.11 {
+    /*override fun keyPressed(event: net.minecraft.client.input.KeyEvent): Boolean {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(event)) {
+            onClose()
+            return true
+        }
+        return super.keyPressed(event)
+    }*/
+    //?} else {
+    override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
+            onClose()
+            return true
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers)
+    }
+    //?}
+
+    //? if >=1.20 {
+    private fun drawBtn(graphics: GuiGraphics, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean) {
+        val bg = when {
+            !active -> theme.buttonDisabledColor
+            hovered -> theme.buttonHoverColor
+            else -> theme.buttonColor
+        }
+        val border = if (active) theme.accentColor else theme.buttonDisabledBorderColor
+        val textColor = if (active) theme.buttonTextColor else theme.buttonDisabledTextColor
+        graphics.fill(x, y, x + w, y + h, bg)
+        graphics.fill(x, y, x + w, y + 1, border)
+        graphics.fill(x, y, x + 1, y + h, border)
+        graphics.fill(x + w - 1, y, x + w, y + h, border)
+        graphics.fill(x, y + h - 1, x + w, y + h, border)
+        graphics.drawString(font, label, x + 6, y + (h - 8) / 2, textColor, useTextShadow())
+    }
+    //?} else {
+    /*private fun drawBtn1919(poseStack: PoseStack, x: Int, y: Int, w: Int, h: Int, label: String, hovered: Boolean, active: Boolean) {
+        val bg = when {
+            !active -> theme.buttonDisabledColor
+            hovered -> theme.buttonHoverColor
+            else -> theme.buttonColor
+        }
+        val border = if (active) theme.accentColor else theme.buttonDisabledBorderColor
+        val textColor = if (active) theme.buttonTextColor else theme.buttonDisabledTextColor
+        GuiComponent.fill(poseStack, x, y, x + w, y + h, bg)
+        GuiComponent.fill(poseStack, x, y, x + w, y + 1, border)
+        GuiComponent.fill(poseStack, x, y, x + 1, y + h, border)
+        GuiComponent.fill(poseStack, x + w - 1, y, x + w, y + h, border)
+        GuiComponent.fill(poseStack, x, y + h - 1, x + w, y + h, border)
+        GuiComponent.drawString(poseStack, font, label, x + 6, y + (h - 8) / 2, textColor)
+    }*/
+    //?}
 }

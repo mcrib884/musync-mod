@@ -38,11 +38,11 @@ object MuSyncLog {
     }
 
     fun info(message: String, vararg args: Any?) {
-        if (MuSyncConfig.logging) logger.info(message, *args)
+        logger.info(message, *args)
     }
 
     fun warn(message: String, vararg args: Any?) {
-        if (MuSyncConfig.logging) logger.warn(message, *args)
+        logger.warn(message, *args)
     }
 
     fun error(message: String, vararg args: Any?) {

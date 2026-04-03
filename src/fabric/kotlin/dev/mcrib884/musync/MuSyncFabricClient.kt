@@ -82,6 +82,10 @@ class MuSyncFabricClient : ClientModInitializer {
             dev.mcrib884.musync.client.CustomTrackCache.clear()
         })
 
+        ClientPlayConnectionEvents.JOIN.register(ClientPlayConnectionEvents.Join { _, _, _ ->
+            ClientTrackManager.onWorldLoaded()
+        })
+
         PacketHandler.registerFabricClient()
     }
 }

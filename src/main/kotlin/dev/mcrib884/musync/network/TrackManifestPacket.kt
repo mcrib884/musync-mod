@@ -15,9 +15,15 @@ import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
 //?}
 
+data class TrackManifestEntry(
+    val name: String,
+    val size: Long,
+    val sha256: String
+)
+
 data class TrackManifestPacket(
     val manifestVersion: Long,
-    val tracks: List<Pair<String, Long>>
+    val tracks: List<TrackManifestEntry>
 //? if neoforge {
 /*) : CustomPacketPayload {
     override fun type(): CustomPacketPayload.Type<out CustomPacketPayload> = TYPE*/
@@ -35,20 +41,22 @@ data class TrackManifestPacket(
         fun encode(packet: TrackManifestPacket, buf: FriendlyByteBuf) {
             buf.writeLong(packet.manifestVersion)
             buf.writeInt(packet.tracks.size)
-            for ((name, size) in packet.tracks) {
-                PacketIO.writeUtfBounded(buf, name, PacketIO.MAX_TRACK_NAME_LENGTH)
-                buf.writeLong(size)
+            for (entry in packet.tracks) {
+                PacketIO.writeUtfBounded(buf, entry.name, PacketIO.MAX_TRACK_NAME_LENGTH)
+                buf.writeLong(entry.size)
+                PacketIO.writeUtfBounded(buf, entry.sha256, PacketIO.MAX_TRACK_HASH_LENGTH)
             }
         }
 
         fun decode(buf: FriendlyByteBuf): TrackManifestPacket {
             val manifestVersion = buf.readLong()
             val count = buf.readInt().coerceIn(0, PacketIO.MAX_MANIFEST_ENTRIES)
-            val tracks = mutableListOf<Pair<String, Long>>()
+            val tracks = mutableListOf<TrackManifestEntry>()
             for (i in 0 until count) {
-                val name = buf.readUtf(PacketIO.MAX_TRACK_NAME_LENGTH)
+                val name = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_NAME_LENGTH)
                 val size = buf.readLong().coerceAtLeast(0L)
-                tracks.add(name to size)
+                val sha256 = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_HASH_LENGTH)
+                tracks.add(TrackManifestEntry(name, size, sha256))
             }
             return TrackManifestPacket(manifestVersion, tracks)
         }

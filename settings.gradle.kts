@@ -13,7 +13,7 @@ plugins {
 	id("dev.kikugie.stonecutter") version "0.7.10"
 }
 
-rootProject.name = "Template"
+rootProject.name = "MuSync"
 
 stonecutter {
 	create(rootProject) {

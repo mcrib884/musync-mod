@@ -72,7 +72,7 @@ data class MusicStatusPacket(
             buf.writeLong(packet.currentPositionMs)
             buf.writeLong(packet.durationMs)
             buf.writeBoolean(packet.isPlaying)
-            PacketIO.writeUtfList(buf, packet.queue, PacketIO.MAX_TRACK_ID_LENGTH)
+            PacketIO.writeUtfList(buf, packet.queue, PacketIO.MAX_TRACK_ID_LENGTH, PacketIO.MAX_QUEUE_ENTRIES)
             buf.writeEnum(packet.mode)
             buf.writeEnum(packet.repeatMode)
             buf.writeBoolean(packet.priorityActive)
@@ -109,7 +109,7 @@ data class MusicStatusPacket(
                 mode = buf.readEnum(PlayMode::class.java),
                 repeatMode = buf.readEnum(RepeatMode::class.java),
                 priorityActive = buf.readBoolean(),
-                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH),
+                resolvedName = PacketIO.readUtfBounded(buf, PacketIO.MAX_SOUND_ID_LENGTH),
                 waitingForNextTrack = buf.readBoolean(),
                 ticksSinceLastMusic = buf.readInt(),
                 nextMusicDelayTicks = buf.readInt(),
@@ -117,13 +117,14 @@ data class MusicStatusPacket(
                 customMaxDelay = buf.readInt(),
                 syncOverworld = buf.readBoolean(),
                 activeDimensions = buildList {
-                    repeat(buf.readInt().coerceIn(0, PacketIO.MAX_DIMENSION_ENTRIES)) {
+                    val dimensionCount = buf.readInt().coerceIn(0, PacketIO.MAX_DIMENSION_ENTRIES)
+                    repeat(dimensionCount) {
                         add(
                             DimensionStatus(
-                                id = buf.readUtf(PacketIO.MAX_DIMENSION_ID_LENGTH),
+                                id = PacketIO.readUtfBounded(buf, PacketIO.MAX_DIMENSION_ID_LENGTH),
                                 players = PacketIO.readUtfList(buf, PacketIO.MAX_PLAYERS_PER_DIMENSION, PacketIO.MAX_PLAYER_NAME_LENGTH),
                                 currentTrack = PacketIO.readNullableUtf(buf, PacketIO.MAX_TRACK_ID_LENGTH),
-                                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH),
+                                resolvedName = PacketIO.readUtfBounded(buf, PacketIO.MAX_SOUND_ID_LENGTH),
                                 isPlaying = buf.readBoolean(),
                                 currentPositionMs = buf.readLong(),
                                 durationMs = buf.readLong(),

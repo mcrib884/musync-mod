@@ -29,7 +29,10 @@ data class MusicClientInfoPacket(
     enum class Action {
         REPORT_DURATION,
         TRACK_FINISHED,
-        LOAD_FAILED
+        LOAD_FAILED,
+        DOWNLOAD_SYNC_STARTED,
+        DOWNLOAD_SYNC_FINISHED,
+        DOWNLOAD_SYNC_FAILED
     }
 
     companion object {
@@ -50,9 +53,9 @@ data class MusicClientInfoPacket(
         fun decode(buf: FriendlyByteBuf): MusicClientInfoPacket {
             return MusicClientInfoPacket(
                 action = buf.readEnum(Action::class.java),
-                trackId = buf.readUtf(PacketIO.MAX_TRACK_ID_LENGTH),
+                trackId = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_ID_LENGTH),
                 durationMs = buf.readLong(),
-                resolvedName = buf.readUtf(PacketIO.MAX_SOUND_ID_LENGTH)
+                resolvedName = PacketIO.readUtfBounded(buf, PacketIO.MAX_SOUND_ID_LENGTH)
             )
         }
 

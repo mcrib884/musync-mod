@@ -109,6 +109,10 @@ class MuSyncNeoForge(modBus: IEventBus) {
                 ClientTrackManager.reset()
                 dev.mcrib884.musync.client.CustomTrackCache.clear()
             }
+
+            NeoForge.EVENT_BUS.addListener<net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent.LoggingIn> { _ ->
+                ClientTrackManager.onWorldLoaded()
+            }
         }
 
         NeoForge.EVENT_BUS.addListener<RegisterCommandsEvent>(::onRegisterCommands)

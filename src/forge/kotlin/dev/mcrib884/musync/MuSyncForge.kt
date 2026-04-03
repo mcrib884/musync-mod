@@ -121,6 +121,14 @@ class MuSyncForge {
                 ClientTrackManager.reset()
                 dev.mcrib884.musync.client.CustomTrackCache.clear()
             }
+
+            //? if >=1.20 {
+            MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingIn> { _ ->
+            //?} else {
+            /*MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggedInEvent> { _ ->*/
+            //?}
+                ClientTrackManager.onWorldLoaded()
+            }
         }
 
         MinecraftForge.EVENT_BUS.addListener<RegisterCommandsEvent>(::onRegisterCommands)

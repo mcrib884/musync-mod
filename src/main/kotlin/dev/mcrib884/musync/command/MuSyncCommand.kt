@@ -541,7 +541,12 @@ object MuSyncCommand {
         }
 
         for (key in availableAliases) {
-            val displayName = formatAliasName(key)
+            val eventId = TRACK_MAP[key]?.substringBefore("|")
+            val displayName = if (eventId != null) {
+                dev.mcrib884.musync.TrackNames.formatTrack("$eventId|alias:$key")
+            } else {
+                formatAliasName(key)
+            }
             entries.putIfAbsent(key, displayName)
         }
 
@@ -649,6 +654,17 @@ object MuSyncCommand {
 
     fun resolveTrackValue(friendlyName: String): String? {
         val key = friendlyName.lowercase().replace(" ", "_")
+
+        if (key.contains("|") && !key.startsWith("custom:")) {
+            val eventId = key.substringBefore("|")
+            val specific = key.substringAfter("|", "")
+            if (specific.isNotEmpty()) {
+                val resource = ResourceLocation.tryParse(eventId) ?: return null
+                if (!soundEventContains(resource)) return null
+                return "$eventId|$specific"
+            }
+        }
+
         val customKey = key.removePrefix("custom:")
         val internal = dev.mcrib884.musync.server.CustomTrackManager.toInternalName(customKey)
         if (internal != null) {
@@ -664,7 +680,8 @@ object MuSyncCommand {
             return eventId
         }
         val resourceLocation = ResourceLocation.tryParse(key) ?: return null
-        return if (soundEventContains(resourceLocation)) resourceLocation.toString() else null
+        if (!soundEventContains(resourceLocation)) return null
+        return resourceLocation.toString()
     }
 
     fun getSpecificSound(friendlyName: String): String {

@@ -201,8 +201,12 @@ tasks {
 
 	remapJar {
 		archiveFileName.set("${modId}-${loaderPlatform}-${mcVersion}+${modVersion}.jar")
-		injectAccessWidener.set(true)
-		atAccessWideners.add(loom.accessWidenerPath.get().asFile.name)
+		if (loaderPlatform == "fabric") {
+			injectAccessWidener.set(false)
+		} else {
+			injectAccessWidener.set(true)
+			atAccessWideners.add(loom.accessWidenerPath.get().asFile.name)
+		}
 	}
 }
 

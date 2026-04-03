@@ -11,6 +11,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(WinScreen.class)
 public class WinScreenMixin {
 
+    @Inject(method = "init", at = @At("HEAD"))
+    private void musync$onCreditsOpened(CallbackInfo ci) {
+        PacketHandler.INSTANCE.sendToServer(new MusicControlPacket(MusicControlPacket.Action.CREDITS_OPENED, null, null, 0L, null));
+    }
+
     @Inject(method = "onClose", at = @At("HEAD"))
     private void musync$onCreditsSkipped(CallbackInfo ci) {
         PacketHandler.INSTANCE.sendToServer(new MusicControlPacket(MusicControlPacket.Action.CREDITS_SKIP, null, null, 0L, null));
