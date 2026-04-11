@@ -1,6 +1,7 @@
 import org.jetbrains.gradle.ext.packagePrefix
 import org.jetbrains.gradle.ext.settings
 import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
+import java.util.zip.ZipFile
 
 plugins {
 	kotlin("jvm")
@@ -122,10 +123,7 @@ dependencies {
 		}
 	}
 
-	implementation("com.googlecode.soundlibs:jlayer:1.0.1.4")
-	if (loaderPlatform == "fabric") {
-		include("com.googlecode.soundlibs:jlayer:1.0.1.4")
-	}
+	implementation("org.bytedeco:ffmpeg-platform:8.0.1-1.5.13")
 }
 if (loaderPlatform == "neoforge") {
 	configurations.all {
@@ -136,17 +134,62 @@ if (loaderPlatform == "neoforge") {
 
 val javaVersion: String by project
 
-val extractJlayer = tasks.register("extractJlayer", Copy::class) {
-	from(provider {
-		val jar = configurations.runtimeClasspath.get().files.find { it.name.startsWith("jlayer-") }
-		if (jar != null) zipTree(jar) else files()
-	}) {
-		exclude("META-INF/**")
-	}
-	into(layout.buildDirectory.dir("classes/java/main"))
+val cleanBundledAudioCodecs = tasks.register("cleanBundledAudioCodecs", Delete::class) {
+	delete(
+		layout.buildDirectory.dir("generated/audioCodecs"),
+		layout.buildDirectory.dir("classes/java/main/org/bytedeco"),
+		layout.buildDirectory.dir("classes/java/main/org/jcodec"),
+		layout.buildDirectory.dir("classes/java/main/org/tritonus"),
+		layout.buildDirectory.dir("classes/java/main/net/sourceforge"),
+		layout.buildDirectory.dir("classes/java/main/lib")
+	)
 }
-tasks.named("classes") {
-	dependsOn(extractJlayer)
+
+val extractAudioCodecs = tasks.register("extractAudioCodecs", Sync::class) {
+	dependsOn(cleanBundledAudioCodecs)
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	from(provider {
+		configurations.runtimeClasspath.get().files
+			.filter {
+				it.name.startsWith("ffmpeg-") ||
+				it.name.startsWith("javacpp-")
+			}
+			.map { zipTree(it) }
+	}) {
+		include("org/bytedeco/**/*.class")
+		include("org/bytedeco/**/*.properties")
+		include("org/bytedeco/**/*.json")
+		include("META-INF/maven/org.bytedeco/**/pom.properties")
+		include("org/bytedeco/ffmpeg/windows-x86_64/avcodec-*.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/avformat-*.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/avutil-*.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/swresample-*.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/jniavcodec.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/jniavformat.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/jniavutil.dll")
+		include("org/bytedeco/ffmpeg/windows-x86_64/jniswresample.dll")
+		include("org/bytedeco/javacpp/windows-x86_64/*.dll")
+		includeEmptyDirs = false
+	}
+	into(layout.buildDirectory.dir("generated/audioCodecs"))
+}
+tasks.named<Jar>("jar") {
+	dependsOn(extractAudioCodecs)
+	from(extractAudioCodecs)
+}
+
+val verifyReleaseJar = tasks.register("verifyReleaseJar") {
+	dependsOn(tasks.named("remapJar"))
+	doLast {
+		val jarFile = tasks.named<org.gradle.jvm.tasks.Jar>("remapJar").get().archiveFile.get().asFile
+		ZipFile(jarFile).use { zip ->
+			val entries = zip.entries().asSequence().map { it.name }.toSet()
+				if (loaderPlatform == "fabric") {
+					require("fabric.mod.json" in entries) { "Missing fabric.mod.json in ${jarFile.name}" }
+					require("musync.accesswidener" in entries) { "Missing musync.accesswidener in ${jarFile.name}" }
+				}
+		}
+	}
 }
 
 tasks {
@@ -207,6 +250,10 @@ tasks {
 			injectAccessWidener.set(true)
 			atAccessWideners.add(loom.accessWidenerPath.get().asFile.name)
 		}
+	}
+
+	named("build") {
+		dependsOn(verifyReleaseJar)
 	}
 }
 

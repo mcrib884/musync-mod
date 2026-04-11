@@ -7,13 +7,27 @@ import org.lwjgl.stb.STBVorbis
 import org.lwjgl.stb.STBVorbisInfo
 import org.lwjgl.system.MemoryStack
 import org.lwjgl.system.MemoryUtil
-import javazoom.jl.decoder.Bitstream
-import javazoom.jl.decoder.Decoder
-import javazoom.jl.decoder.Header
-import javazoom.jl.decoder.SampleBuffer
-import java.io.ByteArrayInputStream
+import org.bytedeco.ffmpeg.avcodec.AVCodec
+import org.bytedeco.ffmpeg.avcodec.AVCodecContext
+import org.bytedeco.ffmpeg.avcodec.AVPacket
+import org.bytedeco.ffmpeg.avformat.AVFormatContext
+import org.bytedeco.ffmpeg.avformat.AVStream
+import org.bytedeco.ffmpeg.avutil.AVChannelLayout
+import org.bytedeco.ffmpeg.avutil.AVFrame
+import org.bytedeco.ffmpeg.avutil.AVRational
+import org.bytedeco.ffmpeg.swresample.SwrContext
+import org.bytedeco.ffmpeg.global.avcodec.*
+import org.bytedeco.ffmpeg.global.avformat.*
+import org.bytedeco.ffmpeg.global.avutil.*
+import org.bytedeco.ffmpeg.global.swresample.*
+import org.bytedeco.javacpp.BytePointer
+import org.bytedeco.javacpp.Loader
+import org.bytedeco.javacpp.Pointer
+import org.bytedeco.javacpp.PointerPointer
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.io.RandomAccessFile
+import java.nio.file.Files
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CancellationException
@@ -347,245 +361,499 @@ object CustomTrackPlayer {
         }
     }
 
-    class Mp3Stream(audioData: ByteArray, private val shouldCancel: () -> Boolean = { false }) : AudioStream {
-        private data class SeekPoint(val timeMs: Long, val byteOffset: Int)
-
+    class FfmpegCompressedStream private constructor(
+        private var inputFile: File?,
+        private val deleteInputFileOnClose: Boolean,
+        private val shouldCancel: () -> Boolean = { false }
+    ) : AudioStream {
         override var format: Int = 0
         override var sampleRate: Int = 0
-        override var durationMs: Long = 0
+        override var durationMs: Long = -1L
 
-        private var sourceData: ByteArray? = audioData
-        private var bitstream: Bitstream? = null
-        private var decoder: Decoder? = null
+        private var outputChannels: Int = 0
+        private var frameSize: Int = 0
+        private var streamIndex: Int = -1
+        private var formatContext: AVFormatContext? = null
+        private var stream: AVStream? = null
+        private var codecContext: AVCodecContext? = null
+        private var packet: AVPacket? = null
+        private var frame: AVFrame? = null
+        private var swrContext: SwrContext? = null
         private var pendingPcmData: ByteArray? = null
         private var pendingOffset: Int = 0
-        private var channels: Int = 0
-        private var frameSize: Int = 0
-        private val seekPoints = ArrayList<SeekPoint>()
+        private var outputBuffer: BytePointer? = null
+        private var outputBufferCapacity: Int = 0
+        private var inputExhausted = false
+        private var decoderFlushed = false
+
+        constructor(file: File, shouldCancel: () -> Boolean = { false }) : this(file, false, shouldCancel)
+
+        constructor(audioData: ByteArray, sourceName: String? = null, shouldCancel: () -> Boolean = { false }) :
+            this(stageInputData(audioData, sourceName), true, shouldCancel)
 
         init {
-            reopenDecoder()
-            val firstHeaderDuration = LongArray(1)
-            val firstOutput = decodeNextFrame { header ->
-                val data = sourceData
-                firstHeaderDuration[0] = if (data != null) header.total_ms(data.size).toLong() else -1L
-            } ?: throw Exception("MP3: failed to decode any audio frames")
-
-            sampleRate = firstOutput.sampleFrequency
-            channels = firstOutput.channelCount
-            frameSize = channels * 2
-            format = if (channels == 1) AL10.AL_FORMAT_MONO16 else AL10.AL_FORMAT_STEREO16
-            durationMs = if (firstHeaderDuration[0] > 0) firstHeaderDuration[0] else -1L
-            buildSeekIndex()
-
-            pendingPcmData = encodePcm(firstOutput)
-            val initialPcm = pendingPcmData
-            if (sampleRate == 0 || channels == 0 || initialPcm == null || initialPcm.isEmpty()) {
-                throw Exception("MP3: failed to decode any audio frames")
-            }
+            ensureFfmpegInitialized()
+            openInput(inputFile ?: throw Exception("FFmpeg: missing input file"))
         }
 
         override fun readPcm(buffer: ByteBuffer): Int {
             if (frameSize <= 0) return 0
-            var totalRead = 0
 
+            var totalRead = 0
             while (buffer.remaining() >= frameSize) {
                 val pending = pendingPcmData
                 if (pending != null) {
-                    val remaining = pending.size - pendingOffset
-                    if (remaining > 0) {
-                        val toRead = minOf(buffer.remaining(), remaining)
-                        val aligned = toRead - (toRead % frameSize)
-                        if (aligned <= 0) break
-                        buffer.put(pending, pendingOffset, aligned)
-                        pendingOffset += aligned
-                        totalRead += aligned
+                    val available = pending.size - pendingOffset
+                    if (available > 0) {
+                        val toCopy = minOf(buffer.remaining(), available)
+                        val alignedCopy = toCopy - (toCopy % frameSize)
+                        if (alignedCopy <= 0) break
+
+                        buffer.put(pending, pendingOffset, alignedCopy)
+                        pendingOffset += alignedCopy
+                        totalRead += alignedCopy
                         if (pendingOffset >= pending.size) {
                             pendingPcmData = null
                             pendingOffset = 0
                         }
                         continue
                     }
+
                     pendingPcmData = null
                     pendingOffset = 0
                 }
 
-                val nextOutput = decodeNextFrame() ?: break
-                val nextPcm = encodePcm(nextOutput)
-                if (nextPcm.isEmpty()) break
-                pendingPcmData = nextPcm
+                val nextChunk = decodeNextChunk() ?: break
+                if (nextChunk.isEmpty()) break
+                pendingPcmData = nextChunk
             }
 
             return totalRead
         }
 
         override fun seekMs(ms: Long) {
-            val data = sourceData ?: return
-            if (frameSize <= 0 || sampleRate <= 0) return
-            val targetMs = ms.coerceAtLeast(0L)
-            val seekPoint = findSeekPoint(targetMs)
+            val currentFormat = formatContext ?: return
+            val currentCodec = codecContext ?: return
+            val currentStream = stream ?: return
+            val currentSwr = swrContext ?: return
+            val currentPacket = packet
+            val currentFrame = frame
 
-            reopenDecoder(data, seekPoint.byteOffset)
-            if (targetMs <= seekPoint.timeMs) return
-
-            var currentMs = seekPoint.timeMs
-            while (currentMs < targetMs) {
-                val output = decodeNextFrame() ?: break
-                val outputFrames = output.bufferLength / output.channelCount
-                if (outputFrames <= 0) break
-                val frameDurationMs = ((outputFrames.toLong() * 1000L) / sampleRate.toLong()).coerceAtLeast(1L)
-                val remainingMs = targetMs - currentMs
-                if (remainingMs >= frameDurationMs) {
-                    currentMs += frameDurationMs
-                    continue
-                }
-
-                val skipFrames = ((remainingMs * sampleRate.toLong()) / 1000L).toInt().coerceAtMost(outputFrames)
-                pendingPcmData = encodePcm(output, skipFrames)
-                pendingOffset = 0
-                break
+            val targetTimestamp = av_rescale_q(ms.coerceAtLeast(0L), MILLIS_TIME_BASE, currentStream.time_base())
+            val seekResult = av_seek_frame(currentFormat, streamIndex, targetTimestamp, AVSEEK_FLAG_BACKWARD)
+            if (seekResult < 0) {
+                throw Exception("FFmpeg: seek failed ($seekResult)")
             }
-        }
 
-        private fun reopenDecoder(data: ByteArray? = sourceData, offset: Int = 0) {
-            val actualData = data ?: return
-            val safeOffset = offset.coerceIn(0, actualData.size)
-            closeDecoder()
-            bitstream = Bitstream(ByteArrayInputStream(actualData, safeOffset, actualData.size - safeOffset))
-            decoder = Decoder()
+            avcodec_flush_buffers(currentCodec)
+            swr_close(currentSwr)
+            val reinitResult = swr_init(currentSwr)
+            if (reinitResult < 0) {
+                throw Exception("FFmpeg: failed to reinitialize resampler after seek ($reinitResult)")
+            }
+
+            if (currentPacket != null) {
+                av_packet_unref(currentPacket)
+            }
+            if (currentFrame != null) {
+                av_frame_unref(currentFrame)
+            }
+
             pendingPcmData = null
             pendingOffset = 0
+            inputExhausted = false
+            decoderFlushed = false
         }
 
-        private fun buildSeekIndex() {
-            val data = sourceData ?: return
-            seekPoints.clear()
-
-            val indexBitstream = Bitstream(ByteArrayInputStream(data))
-            val id3v2Offset = indexBitstream.header_pos().coerceAtLeast(0)
-            seekPoints.add(SeekPoint(0L, id3v2Offset))
-
-            var indexedTimeMs = 0L
-            var byteOffset = id3v2Offset
-            var nextCheckpointMs = SEEK_INDEX_INTERVAL_MS
+        private fun openInput(file: File) {
+            val openedFormatContext = avformat_alloc_context() ?: throw Exception("FFmpeg: failed to allocate format context")
             try {
-                while (true) {
-                    if (shouldCancel()) throw CancellationException()
-                    val header = try {
-                        indexBitstream.readFrame()
-                    } catch (_: javazoom.jl.decoder.BitstreamException) {
-                        break
-                    } ?: break
+                openedFormatContext.seek2any(1)
 
-                    try {
-                        if (indexedTimeMs >= nextCheckpointMs) {
-                            seekPoints.add(SeekPoint(indexedTimeMs, byteOffset))
-                            nextCheckpointMs += SEEK_INDEX_INTERVAL_MS
-                        }
+                val openResult = avformat_open_input(openedFormatContext, file.absolutePath, null, null)
+                if (openResult < 0) {
+                    throw Exception("FFmpeg: failed to open input ($openResult)")
+                }
 
-                        val frameMs = header.ms_per_frame().toLong().coerceAtLeast(1L)
-                        indexedTimeMs += frameMs
-                        val frameSizeBytes = header.calculate_framesize()
-                        if (frameSizeBytes > 0) {
-                            byteOffset += frameSizeBytes
-                        }
-                    } finally {
-                        try {
-                            indexBitstream.closeFrame()
-                        } catch (_: Exception) {}
+                val infoResult = avformat_find_stream_info(openedFormatContext, null as PointerPointer<Pointer>?)
+                if (infoResult < 0) {
+                    throw Exception("FFmpeg: failed to read stream info ($infoResult)")
+                }
+
+                val openedStreamIndex = findAudioStreamIndex(openedFormatContext)
+                val openedStream = openedFormatContext.streams(openedStreamIndex)
+                val codecParameters = openedStream.codecpar()
+                val codec = avcodec_find_decoder(codecParameters.codec_id())
+                    ?: throw Exception("FFmpeg: no decoder found for codec id ${codecParameters.codec_id()}")
+
+                val openedCodecContext = avcodec_alloc_context3(codec)
+                    ?: throw Exception("FFmpeg: failed to allocate codec context")
+                try {
+                    val parametersResult = avcodec_parameters_to_context(openedCodecContext, codecParameters)
+                    if (parametersResult < 0) {
+                        throw Exception("FFmpeg: failed to copy codec parameters ($parametersResult)")
                     }
+
+                    openedCodecContext.thread_count(1)
+                    val codecOpenResult = avcodec_open2(openedCodecContext, codec, null as PointerPointer<Pointer>?)
+                    if (codecOpenResult < 0) {
+                        throw Exception("FFmpeg: failed to open decoder ($codecOpenResult)")
+                    }
+
+                    val detectedSampleRate = openedCodecContext.sample_rate()
+                    val detectedChannels = openedCodecContext.ch_layout().nb_channels().coerceAtLeast(1)
+                    if (detectedSampleRate <= 0) {
+                        throw Exception("FFmpeg: decoder reported invalid sample rate $detectedSampleRate")
+                    }
+
+                    sampleRate = detectedSampleRate
+                    outputChannels = if (detectedChannels == 1) 1 else 2
+                    frameSize = outputChannels * 2
+                    format = if (outputChannels == 1) AL10.AL_FORMAT_MONO16 else AL10.AL_FORMAT_STEREO16
+                    durationMs = resolveDurationMs(openedFormatContext, openedStream)
+
+                    val openedSwr = createResampler(openedCodecContext, detectedChannels)
+                    val openedPacket = av_packet_alloc() ?: throw Exception("FFmpeg: failed to allocate packet")
+                    val openedFrame = av_frame_alloc() ?: throw Exception("FFmpeg: failed to allocate frame")
+
+                    formatContext = openedFormatContext
+                    stream = openedStream
+                    streamIndex = openedStreamIndex
+                    codecContext = openedCodecContext
+                    swrContext = openedSwr
+                    packet = openedPacket
+                    frame = openedFrame
+                    inputExhausted = false
+                    decoderFlushed = false
+                } catch (e: Exception) {
+                    avcodec_free_context(openedCodecContext)
+                    throw e
                 }
+            } catch (e: Exception) {
+                avformat_close_input(openedFormatContext)
+                throw e
+            }
+        }
+
+        private fun findAudioStreamIndex(openedFormatContext: AVFormatContext): Int {
+            for (index in 0 until openedFormatContext.nb_streams()) {
+                val candidate = openedFormatContext.streams(index)
+                if (candidate.codecpar().codec_type() == AVMEDIA_TYPE_AUDIO) {
+                    return index
+                }
+            }
+            throw Exception("FFmpeg: no audio stream found")
+        }
+
+        private fun createResampler(openedCodecContext: AVCodecContext, inputChannels: Int): SwrContext {
+            val inputLayout = resolveChannelLayout(openedCodecContext, inputChannels)
+            val outputLayout = defaultChannelLayout(outputChannels)
+            val openedSwr = swr_alloc()
+                ?: throw Exception("FFmpeg: failed to allocate resampler")
+
+            try {
+                val inLayoutResult = av_opt_set_chlayout(openedSwr, "in_chlayout", inputLayout, 0)
+                if (inLayoutResult < 0) {
+                    throw Exception("FFmpeg: failed to set input channel layout ($inLayoutResult)")
+                }
+
+                val outLayoutResult = av_opt_set_chlayout(openedSwr, "out_chlayout", outputLayout, 0)
+                if (outLayoutResult < 0) {
+                    throw Exception("FFmpeg: failed to set output channel layout ($outLayoutResult)")
+                }
+
+                av_opt_set_int(openedSwr, "in_sample_rate", openedCodecContext.sample_rate().toLong(), 0)
+                av_opt_set_int(openedSwr, "out_sample_rate", sampleRate.toLong(), 0)
+                av_opt_set_sample_fmt(openedSwr, "in_sample_fmt", openedCodecContext.sample_fmt(), 0)
+                av_opt_set_sample_fmt(openedSwr, "out_sample_fmt", AV_SAMPLE_FMT_S16, 0)
+
+                val initResult = swr_init(openedSwr)
+                if (initResult < 0) {
+                    throw Exception("FFmpeg: failed to initialize resampler ($initResult)")
+                }
+
+                return openedSwr
+            } catch (e: Exception) {
+                swr_free(openedSwr)
+                throw e
             } finally {
-                try {
-                    indexBitstream.close()
-                } catch (_: Exception) {}
-            }
-
-            if (durationMs <= 0 && indexedTimeMs > 0) {
-                durationMs = indexedTimeMs
+                av_channel_layout_uninit(inputLayout)
+                inputLayout.close()
+                av_channel_layout_uninit(outputLayout)
+                outputLayout.close()
             }
         }
 
-        private fun findSeekPoint(targetMs: Long): SeekPoint {
-            var low = 0
-            var high = seekPoints.size - 1
-            var best = seekPoints.firstOrNull() ?: SeekPoint(0L, 0)
-
-            while (low <= high) {
-                val mid = (low + high) ushr 1
-                val candidate = seekPoints[mid]
-                if (candidate.timeMs <= targetMs) {
-                    best = candidate
-                    low = mid + 1
-                } else {
-                    high = mid - 1
+        private fun resolveChannelLayout(openedCodecContext: AVCodecContext, inputChannels: Int): AVChannelLayout {
+            val codecLayout = openedCodecContext.ch_layout()
+            if (codecLayout.nb_channels() > 0 && codecLayout.order() != AV_CHANNEL_ORDER_UNSPEC) {
+                val copiedLayout = AVChannelLayout()
+                val copyResult = av_channel_layout_copy(copiedLayout, codecLayout)
+                if (copyResult < 0) {
+                    copiedLayout.close()
+                    throw Exception("FFmpeg: failed to copy input channel layout ($copyResult)")
                 }
+                return copiedLayout
             }
-            return best
+
+            return defaultChannelLayout(inputChannels)
         }
 
-        private fun closeDecoder() {
-            val currentBitstream = bitstream
-            bitstream = null
-            decoder = null
-            if (currentBitstream != null) {
-                try {
-                    currentBitstream.close()
-                } catch (_: Exception) {}
+        private fun defaultChannelLayout(channelCount: Int): AVChannelLayout {
+            val layout = AVChannelLayout()
+            av_channel_layout_default(layout, channelCount)
+            if (layout.nb_channels() <= 0) {
+                layout.close()
+                throw Exception("FFmpeg: unsupported channel count $channelCount")
             }
+            return layout
         }
 
-        private fun decodeNextFrame(onHeader: ((Header) -> Unit)? = null): SampleBuffer? {
-            val currentBitstream = bitstream ?: return null
-            val currentDecoder = decoder ?: return null
+        private fun resolveDurationMs(openedFormatContext: AVFormatContext, openedStream: AVStream): Long {
+            val formatDuration = openedFormatContext.duration()
+            if (formatDuration > 0L && formatDuration != AV_NOPTS_VALUE.toLong()) {
+                return formatDuration / 1000L
+            }
+
+            val streamDuration = openedStream.duration()
+            if (streamDuration > 0L && streamDuration != AV_NOPTS_VALUE.toLong()) {
+                return av_rescale_q(streamDuration, openedStream.time_base(), MILLIS_TIME_BASE)
+            }
+
+            return -1L
+        }
+
+        private fun decodeNextChunk(): ByteArray? {
+            val currentCodec = codecContext ?: return null
+            val currentFormat = formatContext ?: return null
+            val currentPacket = packet ?: return null
+            val currentFrame = frame ?: return null
 
             while (true) {
                 if (shouldCancel()) throw CancellationException()
-                val header = try {
-                    currentBitstream.readFrame()
-                } catch (_: javazoom.jl.decoder.BitstreamException) {
-                    return null
-                } ?: return null
 
-                try {
-                    onHeader?.invoke(header)
-                    val output = currentDecoder.decodeFrame(header, currentBitstream) as? SampleBuffer
-                    if (output != null && output.bufferLength > 0) {
-                        return output
+                val receiveResult = avcodec_receive_frame(currentCodec, currentFrame)
+                when {
+                    receiveResult >= 0 -> {
+                        try {
+                            val chunk = convertFrame(currentFrame)
+                            if (chunk.isNotEmpty()) {
+                                return chunk
+                            }
+                        } finally {
+                            av_frame_unref(currentFrame)
+                        }
                     }
-                } catch (_: Exception) {
-                } finally {
-                    try {
-                        currentBitstream.closeFrame()
-                    } catch (_: Exception) {}
+                    receiveResult == AVERROR_EOF -> return null
+                    receiveResult != AVERROR_EAGAIN() -> throw Exception("FFmpeg: decode failed ($receiveResult)")
+                    else -> {
+                        if (!inputExhausted) {
+                            val queuedPacket = queueNextPacket(currentFormat, currentCodec, currentPacket)
+                            if (queuedPacket) {
+                                continue
+                            }
+                            inputExhausted = true
+                        }
+
+                        if (!decoderFlushed) {
+                            val flushResult = avcodec_send_packet(currentCodec, null as AVPacket?)
+                            if (flushResult < 0 && flushResult != AVERROR_EOF && flushResult != AVERROR_EAGAIN()) {
+                                throw Exception("FFmpeg: decoder flush failed ($flushResult)")
+                            }
+                            decoderFlushed = true
+                            continue
+                        }
+
+                        return null
+                    }
                 }
             }
         }
 
-        private fun encodePcm(output: SampleBuffer, startFrame: Int = 0): ByteArray {
-            val startIndex = (startFrame * output.channelCount).coerceIn(0, output.bufferLength)
-            val sampleCount = output.bufferLength - startIndex
+        private fun queueNextPacket(currentFormat: AVFormatContext, currentCodec: AVCodecContext, currentPacket: AVPacket): Boolean {
+            while (true) {
+                if (shouldCancel()) throw CancellationException()
+
+                val readResult = av_read_frame(currentFormat, currentPacket)
+                if (readResult < 0) {
+                    av_packet_unref(currentPacket)
+                    return false
+                }
+
+                if (currentPacket.stream_index() != streamIndex) {
+                    av_packet_unref(currentPacket)
+                    continue
+                }
+
+                val sendResult = avcodec_send_packet(currentCodec, currentPacket)
+                av_packet_unref(currentPacket)
+                if (sendResult == AVERROR_EAGAIN()) {
+                    return true
+                }
+                if (sendResult < 0) {
+                    throw Exception("FFmpeg: failed to queue packet ($sendResult)")
+                }
+                return true
+            }
+        }
+
+        private fun convertFrame(currentFrame: AVFrame): ByteArray {
+            val currentSwr = swrContext ?: return ByteArray(0)
+            val sampleCount = currentFrame.nb_samples()
             if (sampleCount <= 0) return ByteArray(0)
 
-            val samples = output.buffer
-            val pcmBytes = ByteArray(sampleCount * 2)
-            var pcmOffset = 0
-            for (i in startIndex until output.bufferLength) {
-                val sample = samples[i].toInt()
-                pcmBytes[pcmOffset++] = sample.toByte()
-                pcmBytes[pcmOffset++] = (sample ushr 8).toByte()
+            val maxOutputSamples = swr_get_out_samples(currentSwr, sampleCount)
+            if (maxOutputSamples <= 0) return ByteArray(0)
+
+            val requiredBytes = maxOutputSamples * outputChannels * 2
+            ensureOutputBufferCapacity(requiredBytes)
+            val currentOutputBuffer = outputBuffer ?: return ByteArray(0)
+
+            val outputPointers = PointerPointer<Pointer>(1L)
+            outputPointers.put(0, currentOutputBuffer)
+
+            val convertedSamples = swr_convert(currentSwr, outputPointers, maxOutputSamples, currentFrame.extended_data(), sampleCount)
+            if (convertedSamples < 0) {
+                throw Exception("FFmpeg: sample conversion failed ($convertedSamples)")
             }
+
+            val actualBytes = convertedSamples * outputChannels * 2
+            if (actualBytes <= 0) return ByteArray(0)
+
+            val pcmBytes = ByteArray(actualBytes)
+            currentOutputBuffer.position(0)
+            currentOutputBuffer.get(pcmBytes, 0, actualBytes)
+            currentOutputBuffer.position(0)
             return pcmBytes
         }
 
+        private fun ensureOutputBufferCapacity(requiredBytes: Int) {
+            if (requiredBytes <= outputBufferCapacity) return
+
+            val previousBuffer = outputBuffer
+            outputBuffer = BytePointer(requiredBytes.toLong())
+            outputBufferCapacity = requiredBytes
+            if (previousBuffer != null) {
+                previousBuffer.close()
+            }
+        }
+
         override fun close() {
-            closeDecoder()
-            sourceData = null
             pendingPcmData = null
             pendingOffset = 0
-            channels = 0
-            frameSize = 0
-            seekPoints.clear()
+            inputExhausted = true
+            decoderFlushed = true
+
+            val currentPacket = packet
+            packet = null
+            if (currentPacket != null) {
+                av_packet_free(currentPacket)
+            }
+
+            val currentFrame = frame
+            frame = null
+            if (currentFrame != null) {
+                av_frame_free(currentFrame)
+            }
+
+            val currentSwr = swrContext
+            swrContext = null
+            if (currentSwr != null) {
+                swr_free(currentSwr)
+            }
+
+            val currentCodec = codecContext
+            codecContext = null
+            if (currentCodec != null) {
+                avcodec_free_context(currentCodec)
+            }
+
+            val currentFormat = formatContext
+            formatContext = null
+            stream = null
+            if (currentFormat != null) {
+                avformat_close_input(currentFormat)
+            }
+
+            val currentOutputBuffer = outputBuffer
+            outputBuffer = null
+            outputBufferCapacity = 0
+            if (currentOutputBuffer != null) {
+                currentOutputBuffer.close()
+            }
+
+            val currentInputFile = inputFile
+            inputFile = null
+            if (deleteInputFileOnClose && currentInputFile != null) {
+                currentInputFile.delete()
+            }
+        }
+
+        companion object {
+            @Volatile
+            private var ffmpegInitialized = false
+
+            private fun ensureFfmpegInitialized() {
+                if (ffmpegInitialized) return
+                synchronized(this) {
+                    if (ffmpegInitialized) return
+
+                    configureJavaCppCacheDir()
+                    Loader.load(org.bytedeco.ffmpeg.global.avutil::class.java)
+                    Loader.load(org.bytedeco.ffmpeg.global.avcodec::class.java)
+                    Loader.load(org.bytedeco.ffmpeg.global.avformat::class.java)
+                    Loader.load(org.bytedeco.ffmpeg.global.swresample::class.java)
+                    av_log_set_level(AV_LOG_ERROR)
+                    avformat_network_init()
+                    ffmpegInitialized = true
+                }
+            }
+
+            private fun configureJavaCppCacheDir() {
+                val propertyName = "org.bytedeco.javacpp.cachedir"
+                val configuredPath = System.getProperty(propertyName)
+                if (!configuredPath.isNullOrBlank()) return
+
+                val baseDir = resolveJavaCppCacheBaseDir()
+                val cacheDir = File(baseDir, resolveProcessCacheDirName())
+                try {
+                    Files.createDirectories(cacheDir.toPath())
+                    System.setProperty(propertyName, cacheDir.absolutePath)
+                } catch (e: Exception) {
+                    dev.mcrib884.musync.MuSyncLog.warn("Failed to prepare JavaCPP cache dir '${cacheDir.absolutePath}': ${e.message}")
+                }
+            }
+
+            private fun resolveJavaCppCacheBaseDir(): File {
+                return try {
+                    File(Minecraft.getInstance().gameDirectory, "musync-native-cache")
+                } catch (_: Throwable) {
+                    File(System.getProperty("java.io.tmpdir"), "musync-native-cache")
+                }
+            }
+
+            private fun resolveProcessCacheDirName(): String {
+                val runtimeName = try {
+                    ManagementFactory.getRuntimeMXBean().name
+                } catch (_: Throwable) {
+                    ""
+                }
+                val processId = runtimeName.substringBefore('@').filter { it.isDigit() }.ifBlank { "process" }
+                return "ffmpeg-$processId"
+            }
+
+            private fun stageInputData(audioData: ByteArray, sourceName: String?): File {
+                val extension = sourceName
+                    ?.substringAfterLast('.', "")
+                    ?.lowercase()
+                    ?.takeIf { it.isNotBlank() && it.length <= 8 && it.all(Char::isLetterOrDigit) }
+
+                val stagedPath = Files.createTempFile("musync-codec-", extension?.let { ".${it}" } ?: ".bin")
+                val stagedFile = stagedPath.toFile()
+                stagedFile.writeBytes(audioData)
+                stagedFile.deleteOnExit()
+                return stagedFile
+            }
         }
     }
 
@@ -598,7 +866,7 @@ object CustomTrackPlayer {
                 return null
             }
             val oggBytes = resource.open().use { it.readBytes() }
-            prepareStream(oggBytes)
+            OggStream(oggBytes)
         } catch (e: Exception) {
             dev.mcrib884.musync.MuSyncLog.error("Error loading resource audio: ${e.message}")
             null
@@ -614,9 +882,8 @@ object CustomTrackPlayer {
         return try {
             when {
                 hintedExt == "wav" || magic == "RIFF" -> WavFileStream(file)
-                hintedExt == "mp3" || looksLikeMp3(magicBytes) -> Mp3Stream(file.readBytes(), shouldCancel)
                 hintedExt == "ogg" || magic == "OggS" -> OggStream(file.readBytes())
-                else -> null
+                else -> FfmpegCompressedStream(file, shouldCancel)
             }
         } catch (_: CancellationException) {
             null
@@ -633,9 +900,8 @@ object CustomTrackPlayer {
         return try {
             when {
                 hintedExt == "wav" || magic == "RIFF" -> WavStream(audioData)
-                hintedExt == "mp3" || looksLikeMp3(audioData) -> Mp3Stream(audioData, shouldCancel)
                 hintedExt == "ogg" || magic == "OggS" -> OggStream(audioData)
-                else -> null
+                else -> FfmpegCompressedStream(audioData, sourceName, shouldCancel)
             }
         } catch (_: CancellationException) {
             null
@@ -643,16 +909,6 @@ object CustomTrackPlayer {
             dev.mcrib884.musync.MuSyncLog.error("Error preparing audio stream: ${e.message}")
             null
         }
-    }
-
-    private fun looksLikeMp3(data: ByteArray): Boolean {
-        if (data.size < 2) return false
-        if (data.size >= 3 && data[0] == 'I'.code.toByte() && data[1] == 'D'.code.toByte() && data[2] == '3'.code.toByte()) {
-            return true
-        }
-        val b0 = data[0].toInt() and 0xFF
-        val b1 = data[1].toInt() and 0xFF
-        return b0 == 0xFF && (b1 and 0xE0) == 0xE0
     }
 
     private fun readFileMagic(file: File): ByteArray {
@@ -685,7 +941,7 @@ object CustomTrackPlayer {
     private const val BUFFER_SIZE = 65536
     private const val BUFFER_COUNT = 4
     private const val STOP_WAIT_MS = 250L
-    private const val SEEK_INDEX_INTERVAL_MS = 5000L
+    private val MILLIS_TIME_BASE by lazy(LazyThreadSafetyMode.PUBLICATION) { AVRational().num(1).den(1000) }
 
     private fun closeQuietly(stream: AudioStream?) {
         if (stream == null) return

@@ -1,5 +1,6 @@
 package dev.mcrib884.musync.client
 
+import dev.mcrib884.musync.mixin.WeighedSoundEventsAccessor
 import dev.mcrib884.musync.network.MusicControlPacket
 import dev.mcrib884.musync.network.PacketHandler
 import net.minecraft.client.Minecraft
@@ -166,7 +167,8 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
             if (!visited.add(eventKey)) return
 
             val weighed = mc.soundManager.getSoundEvent(eventId) ?: return
-            for (weighted in weighed.list) {
+            val weightedAccessor = weighed as? WeighedSoundEventsAccessor ?: return
+            for (weighted in weightedAccessor.listField) {
                 val sound = weighted.getSound(random)
                 if (sound.type == Sound.Type.FILE) {
                     out.add(sound.location)

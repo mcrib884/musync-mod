@@ -6,10 +6,14 @@
 	"mixins": [
 	],
 	"client": [
+		"ChannelAccessor",
 		"ChannelMixin",
 		"JukeboxBlockEntityMixin",
 		"MusicManagerAccessor",
 		"MusicManagerMixin",
+		"SoundEngineAccessor",
+		"SoundManagerAccessor",
+		"WeighedSoundEventsAccessor",
 		"WinScreenMixin"
 	],
 	"injectors": {

@@ -870,24 +870,9 @@ object ClientTrackManager {
         return hash.equals(entry.sha256, ignoreCase = true)
     }
 
-    private fun restoreCachedTrack(file: File?, entry: TrackManifestEntry): Boolean {
+    private fun hasUsableCachedTrack(file: File?, entry: TrackManifestEntry): Boolean {
         val cacheFile = file ?: return false
-        if (!cacheEnabled || !hasValidTrackFile(cacheFile, entry)) return false
-        return try {
-            val localFolder = getLocalFolder()
-            if (!localFolder.exists()) localFolder.mkdirs()
-            val target = File(localFolder, entry.name)
-            if (!isInsideFolder(target, localFolder)) return false
-            cacheFile.copyTo(target, overwrite = true)
-            val restored = hasValidTrackFile(target, entry)
-            if (restored) {
-                dev.mcrib884.musync.MuSyncLog.info("Restored cached track '${entry.name}' from musynccache (${entry.size} bytes)")
-            }
-            restored
-        } catch (e: Exception) {
-            dev.mcrib884.musync.MuSyncLog.error("Failed to restore cached track '${entry.name}': ${e.message}")
-            false
-        }
+        return cacheEnabled && hasValidTrackFile(cacheFile, entry)
     }
 
     private fun remainingTrackNames(): List<String> {
@@ -992,7 +977,7 @@ object ClientTrackManager {
             }
             val entry = if (internalName == rawEntry.name) rawEntry else rawEntry.copy(name = internalName)
             if (hasValidTrackFile(localTracks[internalName], entry)) continue
-            if (restoreCachedTrack(cachedTracks[internalName], entry)) continue
+            if (hasUsableCachedTrack(cachedTracks[internalName], entry)) continue
             missing.add(entry)
             downloadStates[entry.name] = ManifestTrackState(entry)
         }
@@ -1121,9 +1106,6 @@ object ClientTrackManager {
             return false
         }
         try {
-            val folder = getLocalFolder()
-            if (!folder.exists()) folder.mkdirs()
-
             val stream = CustomTrackPlayer.prepareStream(sourceFile)
             if (stream == null) {
                 dev.mcrib884.musync.MuSyncLog.warn("Refusing to save track because content is not decodable: $trackName")
@@ -1139,15 +1121,6 @@ object ClientTrackManager {
                 }
             }
 
-            val file = File(folder, safeName)
-            if (file.isDirectory) {
-                dev.mcrib884.musync.MuSyncLog.error("Path traversal detected for track: $trackName")
-                return false
-            }
-            sourceFile.copyTo(file, overwrite = true)
-            CustomTrackCache.put(safeName, sourceFile.readBytes())
-            dev.mcrib884.musync.MuSyncLog.info("Saved custom track to disk: ${file.name} ($totalSize bytes)")
-
             if (cacheEnabled) {
                 try {
                     val cf = getCacheFolder()
@@ -1155,11 +1128,15 @@ object ClientTrackManager {
                     val cacheFile = File(cf, safeName)
                     if (isInsideFolder(cacheFile, cf)) {
                         sourceFile.copyTo(cacheFile, overwrite = true)
-                        dev.mcrib884.musync.MuSyncLog.info("Saved custom track to cache: ${cacheFile.name} ($totalSize bytes)")
+                        dev.mcrib884.musync.MuSyncLog.info("Saved synced custom track to cache: ${cacheFile.name} ($totalSize bytes)")
                     }
                 } catch (e2: Exception) {
                     dev.mcrib884.musync.MuSyncLog.error("Failed to cache track $trackName: ${e2.message}")
+                    return false
                 }
+            } else {
+                CustomTrackCache.put(safeName, sourceFile.readBytes())
+                dev.mcrib884.musync.MuSyncLog.info("Loaded synced custom track into memory: $safeName ($totalSize bytes)")
             }
             return true
         } catch (e: Exception) {

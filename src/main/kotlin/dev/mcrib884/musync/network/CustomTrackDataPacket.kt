@@ -38,6 +38,7 @@ data class CustomTrackDataPacket(
         //?}
 
         fun encode(packet: CustomTrackDataPacket, buf: FriendlyByteBuf) {
+            require(packet.data.size <= CHUNK_SIZE) { "Chunk exceeds $CHUNK_SIZE bytes: ${packet.data.size}" }
             PacketIO.writeUtfBounded(buf, packet.trackName, PacketIO.MAX_TRACK_NAME_LENGTH)
             buf.writeInt(packet.chunkIndex)
             buf.writeInt(packet.totalChunks)
@@ -45,10 +46,11 @@ data class CustomTrackDataPacket(
         }
 
         fun decode(buf: FriendlyByteBuf): CustomTrackDataPacket {
+            val trackName = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_NAME_LENGTH)
             val chunkIndex = buf.readInt().coerceAtLeast(0)
             val totalChunks = buf.readInt().coerceIn(0, MAX_TOTAL_CHUNKS)
             return CustomTrackDataPacket(
-                trackName = PacketIO.readUtfBounded(buf, PacketIO.MAX_TRACK_NAME_LENGTH),
+                trackName = trackName,
                 chunkIndex = chunkIndex,
                 totalChunks = totalChunks,
                 data = buf.readByteArray(CHUNK_SIZE)

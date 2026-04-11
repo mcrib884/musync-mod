@@ -2,6 +2,9 @@ package dev.mcrib884.musync.client
 
 import dev.mcrib884.musync.entityLevel
 import dev.mcrib884.musync.mixin.MusicManagerAccessor
+import dev.mcrib884.musync.mixin.SoundEngineAccessor
+import dev.mcrib884.musync.mixin.SoundManagerAccessor
+import dev.mcrib884.musync.mixin.WeighedSoundEventsAccessor
 import dev.mcrib884.musync.network.*
 import net.minecraft.client.Minecraft
 import net.minecraft.client.resources.sounds.SimpleSoundInstance
@@ -89,9 +92,10 @@ object ClientMusicPlayer {
     private fun suppressVanillaMusic(mc: Minecraft = Minecraft.getInstance()) {
         mc.soundManager.stop(null, SoundSource.MUSIC)
 
-        val managedMusicInstances = mc.soundManager.soundEngine.instanceToChannel.keys
+        val soundManagerAccessor = mc.soundManager as? SoundManagerAccessor
+        val soundEngineAccessor = soundManagerAccessor?.soundEngineField as? SoundEngineAccessor
+        val managedMusicInstances = soundEngineAccessor?.instanceToChannelField?.keys?.toList().orEmpty()
             .filter { it.source == SoundSource.MUSIC }
-            .toList()
         managedMusicInstances.forEach { instance ->
             mc.soundManager.stop(instance)
         }
@@ -216,6 +220,18 @@ object ClientMusicPlayer {
         }
     }
 
+    private fun getCachedCustomTrackFile(fileName: String): File? {
+        if (!ClientTrackManager.cacheEnabled) return null
+        val cacheDir = File(Minecraft.getInstance().gameDirectory, "musynccache")
+        if (!cacheDir.isDirectory) return null
+        val exact = File(cacheDir, fileName)
+        if (exact.isFile) return exact
+        val target = fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+        return cacheDir.listFiles()?.firstOrNull { file ->
+            file.isFile && file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_") == target
+        }
+    }
+
     private fun startAsyncLoad(trackId: String, startPositionMs: Long, specificSound: String, startPaused: Boolean) {
         if (loadExecutor.isShutdown || loadExecutor.isTerminated) {
             loadExecutor = createLoadExecutor()
@@ -243,12 +259,14 @@ object ClientMusicPlayer {
                 val prepared = if (trackId.startsWith("custom:")) {
                     val fileName = trackId.removePrefix("custom:")
                     val localFile = getLocalCustomTrackFile(fileName)
+                    val cachedFile = if (localFile == null) getCachedCustomTrackFile(fileName) else null
                     val preparedAudio = when {
                         localFile != null -> CustomTrackPlayer.prepareStream(localFile) { token != loadToken }
+                        cachedFile != null -> CustomTrackPlayer.prepareStream(cachedFile) { token != loadToken }
                         else -> CustomTrackCache.get(fileName)?.let { CustomTrackPlayer.prepareStream(it, fileName) { token != loadToken } }
                     }
                     if (preparedAudio == null) {
-                        dev.mcrib884.musync.MuSyncLog.warn("Custom track data unavailable: $fileName")
+                        dev.mcrib884.musync.MuSyncLog.warn("Custom track unavailable or undecodable: $fileName")
                         PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
                     } else {
                         PreparedLoad(
@@ -402,7 +420,9 @@ object ClientMusicPlayer {
 
         val soundEvent = dev.mcrib884.musync.createSoundEvent(soundLocation)
 
-        val poolSize = weighedEvents.list.size
+        val weightedAccessor = weighedEvents as? WeighedSoundEventsAccessor ?: return null
+        val weightedList = weightedAccessor.listField
+        val poolSize = weightedList.size
         val attempts = if (poolSize > 1) minOf(poolSize * 2, 10) else 1
 
         var bestResolved: Pair<String, String>? = null
@@ -453,7 +473,8 @@ object ClientMusicPlayer {
         }
 
         var fallback: Pair<String, String>? = null
-        for (weighted in weighedEvents.list) {
+        val weightedAccessor = weighedEvents as? WeighedSoundEventsAccessor ?: return fallback
+        for (weighted in weightedAccessor.listField) {
             val sound = weighted.getSound(net.minecraft.util.RandomSource.create())
             if (sound.type != net.minecraft.client.resources.sounds.Sound.Type.FILE) continue
             val loc = sound.location
