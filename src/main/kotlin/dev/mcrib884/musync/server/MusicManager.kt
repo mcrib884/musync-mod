@@ -2309,11 +2309,30 @@ object MusicManager {
     }
 
     private fun getDelaysFile(): java.io.File {
-        val server = currentServer()
-        val serverDir = serverDir(server)
-        val musyncDir = java.io.File(serverDir, "musync")
-        if (!musyncDir.exists()) musyncDir.mkdirs()
-        return java.io.File(musyncDir, "dimension_delays.properties")
+        val configDir = java.io.File("config")
+        if (!configDir.exists()) configDir.mkdirs()
+        val newFile = java.io.File(configDir, "musync_dimension_delays.properties")
+        // Migrate from old location (<gameDir>/musync/dimension_delays.properties)
+        if (!newFile.exists()) {
+            try {
+                val server = currentServer()
+                val sDir = serverDir(server)
+                val oldFile = java.io.File(java.io.File(sDir, "musync"), "dimension_delays.properties")
+                if (oldFile.exists()) {
+                    oldFile.copyTo(newFile)
+                    dev.mcrib884.musync.MuSyncLog.info("Migrated dimension delays to config folder")
+                }
+            } catch (e: Exception) {
+                dev.mcrib884.musync.MuSyncLog.warn("Failed to migrate dimension delays: ${e.message}")
+            }
+        }
+        // Clean up old musync/ folder from game directory
+        try {
+            val sDir = serverDir(currentServer())
+            val oldDir = java.io.File(sDir, "musync")
+            if (oldDir.exists() && oldDir.isDirectory) oldDir.deleteRecursively()
+        } catch (_: Exception) { }
+        return newFile
     }
 
     private fun saveDimensionDelays() {

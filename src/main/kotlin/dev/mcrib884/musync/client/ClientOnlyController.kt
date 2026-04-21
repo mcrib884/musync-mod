@@ -58,8 +58,7 @@ object ClientOnlyController {
     private var playStartTime: Long = 0
     private var finishCheckBlockedUntilMs: Long = 0
     private var loadingCustomTrack: Boolean = false
-    private val safeInternalName = Regex("^[\\p{L}\\p{N}_\\-]+\\.(ogg|wav|mp3)$")
-    private val supportedExtensions = setOf("ogg", "wav", "mp3")
+    private val supportedExtensions = dev.mcrib884.musync.TrackNameUtil.SUPPORTED_EXTENSIONS
     private const val SEEK_FINISH_GRACE_MS = 750L
 
     val isActive: Boolean
@@ -623,8 +622,7 @@ object ClientOnlyController {
     }
 
     private fun normalizeInternalName(name: String): String? {
-        val normalized = name.lowercase(Locale.ROOT).replace(" ", "_")
-        return if (safeInternalName.matches(normalized)) normalized else null
+        return dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(name)
     }
 
     private fun resolveLocalTrackName(name: String): String? {

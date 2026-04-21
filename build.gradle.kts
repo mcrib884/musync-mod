@@ -123,7 +123,21 @@ dependencies {
 		}
 	}
 
-	implementation("org.bytedeco:ffmpeg-platform:8.0.1-1.5.13")
+	// bytedeco/FFmpeg — compileOnly so we compile against it but don't bundle .class files.
+	// At runtime, bytedeco Java classes are provided by watermedia or another mod.
+	// We ONLY bundle the native DLLs/SOs — these don't create JPMS packages and won't conflict.
+	compileOnly("org.bytedeco:javacpp:1.5.13")
+	compileOnly("org.bytedeco:ffmpeg:8.0.1-1.5.13")
+
+	// Native-only deps: we extract ONLY .dll/.so files from these (no .class files)
+	val nativeBundle by configurations.creating { isTransitive = false }
+	nativeBundle("org.bytedeco:javacpp:1.5.13:windows-x86_64")
+	nativeBundle("org.bytedeco:javacpp:1.5.13:linux-x86_64")
+	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13:windows-x86_64")
+	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13:linux-x86_64")
+	// Also need the base JARs for pom.properties (version detection)
+	nativeBundle("org.bytedeco:javacpp:1.5.13")
+	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13")
 }
 if (loaderPlatform == "neoforge") {
 	configurations.all {
@@ -134,32 +148,15 @@ if (loaderPlatform == "neoforge") {
 
 val javaVersion: String by project
 
-val cleanBundledAudioCodecs = tasks.register("cleanBundledAudioCodecs", Delete::class) {
-	delete(
-		layout.buildDirectory.dir("generated/audioCodecs"),
-		layout.buildDirectory.dir("classes/java/main/org/bytedeco"),
-		layout.buildDirectory.dir("classes/java/main/org/jcodec"),
-		layout.buildDirectory.dir("classes/java/main/org/tritonus"),
-		layout.buildDirectory.dir("classes/java/main/net/sourceforge"),
-		layout.buildDirectory.dir("classes/java/main/lib")
-	)
-}
-
-val extractAudioCodecs = tasks.register("extractAudioCodecs", Sync::class) {
-	dependsOn(cleanBundledAudioCodecs)
+// Extract ONLY native libraries (DLLs/SOs) and version metadata from bytedeco JARs.
+// No .class files → no JPMS package conflicts with watermedia or any other mod.
+val extractNatives = tasks.register("extractNatives", Sync::class) {
 	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	from(provider {
-		configurations.runtimeClasspath.get().files
-			.filter {
-				it.name.startsWith("ffmpeg-") ||
-				it.name.startsWith("javacpp-")
-			}
-			.map { zipTree(it) }
+		configurations.named("nativeBundle").get().files.map { zipTree(it) }
 	}) {
-		include("org/bytedeco/**/*.class")
-		include("org/bytedeco/**/*.properties")
-		include("org/bytedeco/**/*.json")
-		include("META-INF/maven/org.bytedeco/**/pom.properties")
+		// ── Native libraries only (no .class files!) ──
+		// Windows
 		include("org/bytedeco/ffmpeg/windows-x86_64/avcodec-*.dll")
 		include("org/bytedeco/ffmpeg/windows-x86_64/avformat-*.dll")
 		include("org/bytedeco/ffmpeg/windows-x86_64/avutil-*.dll")
@@ -169,13 +166,26 @@ val extractAudioCodecs = tasks.register("extractAudioCodecs", Sync::class) {
 		include("org/bytedeco/ffmpeg/windows-x86_64/jniavutil.dll")
 		include("org/bytedeco/ffmpeg/windows-x86_64/jniswresample.dll")
 		include("org/bytedeco/javacpp/windows-x86_64/*.dll")
+		// Linux
+		include("org/bytedeco/ffmpeg/linux-x86_64/libavcodec*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libavformat*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libavutil*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libswresample*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavcodec*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavformat*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavutil*")
+		include("org/bytedeco/ffmpeg/linux-x86_64/libjniswresample*")
+		include("org/bytedeco/javacpp/linux-x86_64/*")
+		// Version metadata (needed by JavaCPP Loader for library discovery)
+		include("META-INF/maven/org.bytedeco/**/pom.properties")
 		includeEmptyDirs = false
 	}
-	into(layout.buildDirectory.dir("generated/audioCodecs"))
+	into(layout.buildDirectory.dir("generated/natives"))
 }
 tasks.named<Jar>("jar") {
-	dependsOn(extractAudioCodecs)
-	from(extractAudioCodecs)
+	dependsOn(extractNatives)
+	from(extractNatives)
+	manifest.attributes("MixinConfigs" to "musync.mixins.json")
 }
 
 val verifyReleaseJar = tasks.register("verifyReleaseJar") {

@@ -214,9 +214,14 @@ object ClientMusicPlayer {
         if (!tracksDir.isDirectory) return null
         val exact = File(tracksDir, fileName)
         if (exact.isFile) return exact
-        val target = fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+        // Use the same normalization as the server (TrackNameUtil) for fuzzy matching
+        val normalizedTarget = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(fileName)
+            ?: fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
         return tracksDir.listFiles()?.firstOrNull { file ->
-            file.isFile && file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_") == target
+            if (!file.isFile) return@firstOrNull false
+            val normalizedFile = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(file.name)
+                ?: file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+            normalizedFile == normalizedTarget
         }
     }
 
@@ -226,9 +231,13 @@ object ClientMusicPlayer {
         if (!cacheDir.isDirectory) return null
         val exact = File(cacheDir, fileName)
         if (exact.isFile) return exact
-        val target = fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+        val normalizedTarget = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(fileName)
+            ?: fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
         return cacheDir.listFiles()?.firstOrNull { file ->
-            file.isFile && file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_") == target
+            if (!file.isFile) return@firstOrNull false
+            val normalizedFile = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(file.name)
+                ?: file.name.lowercase(java.util.Locale.ROOT).replace(" ", "_")
+            normalizedFile == normalizedTarget
         }
     }
 
@@ -258,14 +267,27 @@ object ClientMusicPlayer {
             try {
                 val prepared = if (trackId.startsWith("custom:")) {
                     val fileName = trackId.removePrefix("custom:")
-                    val localFile = getLocalCustomTrackFile(fileName)
-                    val cachedFile = if (localFile == null) getCachedCustomTrackFile(fileName) else null
+                    val cancelled = token != loadToken
+                    if (cancelled) {
+                        dev.mcrib884.musync.MuSyncLog.info("Skipping load of $fileName (cancelled before start)")
+                    }
+                    val localFile = if (!cancelled) getLocalCustomTrackFile(fileName) else null
+                    val cachedFile = if (localFile == null && !cancelled) getCachedCustomTrackFile(fileName) else null
                     val preparedAudio = when {
+                        cancelled -> null
                         localFile != null -> CustomTrackPlayer.prepareStream(localFile) { token != loadToken }
                         cachedFile != null -> CustomTrackPlayer.prepareStream(cachedFile) { token != loadToken }
-                        else -> CustomTrackCache.get(fileName)?.let { CustomTrackPlayer.prepareStream(it, fileName) { token != loadToken } }
+                        else -> {
+                            val cacheData = CustomTrackCache.get(fileName)
+                            if (cacheData != null) {
+                                CustomTrackPlayer.prepareStream(cacheData, fileName) { token != loadToken }
+                            } else {
+                                dev.mcrib884.musync.MuSyncLog.warn("No local/cached file found for: $fileName (localFile=null, cachedFile=null, cacheData=null)")
+                                null
+                            }
+                        }
                     }
-                    if (preparedAudio == null) {
+                    if (preparedAudio == null && !cancelled) {
                         dev.mcrib884.musync.MuSyncLog.warn("Custom track unavailable or undecodable: $fileName")
                         PreparedLoad(trackId, startPositionMs, specific, startPaused, fileName, null)
                     } else {

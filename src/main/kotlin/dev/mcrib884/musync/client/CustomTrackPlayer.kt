@@ -792,21 +792,255 @@ object CustomTrackPlayer {
         companion object {
             @Volatile
             private var ffmpegInitialized = false
+            @Volatile
+            private var ffmpegAvailable = true
+
+            internal fun isFfmpegAvailable(): Boolean {
+                if (!ffmpegAvailable) return false
+                if (ffmpegInitialized) return true
+                // Try to init — will set ffmpegAvailable = false if bytedeco is missing
+                return try {
+                    ensureFfmpegInitialized()
+                    true
+                } catch (_: Throwable) {
+                    false
+                }
+            }
 
             private fun ensureFfmpegInitialized() {
                 if (ffmpegInitialized) return
+                if (!ffmpegAvailable) throw IllegalStateException("FFmpeg not available")
                 synchronized(this) {
                     if (ffmpegInitialized) return
+                    if (!ffmpegAvailable) throw IllegalStateException("FFmpeg not available")
 
-                    configureJavaCppCacheDir()
-                    Loader.load(org.bytedeco.ffmpeg.global.avutil::class.java)
-                    Loader.load(org.bytedeco.ffmpeg.global.avcodec::class.java)
-                    Loader.load(org.bytedeco.ffmpeg.global.avformat::class.java)
-                    Loader.load(org.bytedeco.ffmpeg.global.swresample::class.java)
-                    av_log_set_level(AV_LOG_ERROR)
-                    avformat_network_init()
+                    try {
+                        // Manually extract and load native DLLs to a single flat directory.
+                        // JavaCPP's Loader splits DLLs across artifact subdirectories, and the
+                        // OS can't resolve dependent DLLs across directories. We bypass Loader
+                        // entirely for native loading.
+                        loadFfmpegNatives()
+                    } catch (e: NoClassDefFoundError) {
+                        ffmpegAvailable = false
+                        dev.mcrib884.musync.MuSyncLog.warn(
+                            "FFmpeg/bytedeco not found. MP3 custom tracks require a mod that provides FFmpeg " +
+                            "(e.g. watermedia). WAV and OGG custom tracks still work."
+                        )
+                        throw e
+                    } catch (e: Throwable) {
+                        ffmpegAvailable = false
+                        val rootCause = generateSequence(e) { it.cause }.last()
+                        dev.mcrib884.musync.MuSyncLog.error(
+                            "FFmpeg native loading failed: ${e.javaClass.simpleName}: ${e.message}" +
+                            if (rootCause !== e) " | Root cause: ${rootCause.javaClass.simpleName}: ${rootCause.message}" else ""
+                        )
+                        throw e
+                    }
+                    // These may trigger bytedeco class static initializers which call
+                    // Loader.load() internally — wrap them as non-fatal since FFmpeg
+                    // decoding still works without these config calls.
+                    try { av_log_set_level(AV_LOG_ERROR) } catch (e: Throwable) {
+                        dev.mcrib884.musync.MuSyncLog.warn("av_log_set_level failed (non-fatal): ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                    try { avformat_network_init() } catch (e: Throwable) {
+                        dev.mcrib884.musync.MuSyncLog.warn("avformat_network_init failed (non-fatal): ${e.javaClass.simpleName}: ${e.message}")
+                    }
+                    dev.mcrib884.musync.MuSyncLog.info("FFmpeg native libraries loaded successfully")
                     ffmpegInitialized = true
                 }
+            }
+
+            /**
+             * Load FFmpeg native libraries completely manually, bypassing JavaCPP's
+             * Loader which fails in multiple ways in the modded environment:
+             *
+             * - Loader uses the class's ClassLoader for resource lookup, but bytedeco
+             *   classes come from watermedia while DLLs are in our JAR
+             * - Loader's preload mechanism can't find dependent DLLs across ClassLoaders
+             * - Loader caches its cacheDir in a static field (locked by watermedia)
+             * - Class static initializers call Loader.load() and can't be prevented
+             *
+             * Solution: extract all DLLs to a flat directory, System.load() in order,
+             * then register in Loader's loadedLibraries map via reflection so class
+             * static initializers find them "already loaded" and skip re-extraction.
+             */
+            private fun loadFfmpegNatives() {
+                val ourCL = FfmpegCompressedStream::class.java.classLoader
+                    ?: throw IllegalStateException("No ClassLoader available")
+                val platform = detectPlatform()
+                val gameDir = net.minecraft.client.Minecraft.getInstance().gameDirectory
+
+                val nativeDir = File(gameDir, "musync-natives/$platform")
+                nativeDir.mkdirs()
+
+                // Step 1: Extract ALL DLLs to a single flat directory
+                extractAllNatives(ourCL, platform, nativeDir)
+
+                // Step 2: Pre-register in BOTH Loader maps BEFORE System.load().
+                // Loader.load(Class) checks "foundLibraries" (class name → path) first.
+                // If found, it returns immediately — NO extraction, NO System.load, NOTHING.
+                // This is critical because System.load(jniavutil.dll) triggers JNI_OnLoad
+                // → class clinit → Loader.load() recursively. Without pre-registration,
+                // the recursive Loader.load() tries to extract files that are locked.
+                val jniPrefix = if (platform.startsWith("windows")) "jni" else "libjni"
+                val jniSuffix = if (platform.startsWith("windows")) ".dll" else ".so"
+                val classMap = mapOf(
+                    "avutil" to "org.bytedeco.ffmpeg.global.avutil",
+                    "avcodec" to "org.bytedeco.ffmpeg.global.avcodec",
+                    "avformat" to "org.bytedeco.ffmpeg.global.avformat",
+                    "swresample" to "org.bytedeco.ffmpeg.global.swresample",
+                    "javacpp" to "org.bytedeco.javacpp.Loader"
+                )
+
+                try {
+                    val loaderClass = org.bytedeco.javacpp.Loader::class.java
+
+                    // Register in foundLibraries (class name → path, checked FIRST by Loader.load)
+                    @Suppress("UNCHECKED_CAST")
+                    val foundField = loaderClass.getDeclaredField("foundLibraries")
+                    foundField.isAccessible = true
+                    val foundLibs = foundField.get(null) as MutableMap<String, String>
+
+                    // Register in loadedLibraries (library name → path)
+                    @Suppress("UNCHECKED_CAST")
+                    val loadedField = loaderClass.getDeclaredField("loadedLibraries")
+                    loadedField.isAccessible = true
+                    val loadedLibs = loadedField.get(null) as MutableMap<String, String>
+
+                    for ((shortName, className) in classMap) {
+                        val jniName = "$jniPrefix$shortName$jniSuffix"
+                        val libFile = File(nativeDir, jniName)
+                        if (libFile.isFile) {
+                            val path = libFile.absolutePath
+                            // foundLibraries: keyed by class name
+                            foundLibs[className] = path
+                            // loadedLibraries: keyed by lib name / class name
+                            loadedLibs[className] = path
+                            loadedLibs["jni$shortName"] = path
+                            loadedLibs[jniName] = path
+                        }
+                    }
+
+                    // Also register all other libs by filename
+                    for (libName in getLoadOrder(platform)) {
+                        val libFile = File(nativeDir, libName)
+                        if (libFile.isFile) {
+                            val path = libFile.absolutePath
+                            loadedLibs[libName] = path
+                            loadedLibs[libName.substringBeforeLast(".")] = path
+                        }
+                    }
+
+                    dev.mcrib884.musync.MuSyncLog.info(
+                        "Pre-registered ${foundLibs.size} entries in foundLibraries, " +
+                        "${loadedLibs.size} in loadedLibraries"
+                    )
+                } catch (e: Exception) {
+                    dev.mcrib884.musync.MuSyncLog.warn(
+                        "Could not pre-register in Loader maps: ${e.javaClass.simpleName}: ${e.message}"
+                    )
+                }
+
+                // Step 3: System.load() ALL libraries in dependency order.
+                // Class static initializers triggered by JNI_OnLoad will call
+                // Loader.load() → finds entry in foundLibraries → returns immediately.
+                // Suppress stderr during loading to hide harmless putMemberOffset
+                // warnings from JavaCPP (version mismatch with watermedia's bindings).
+                val originalErr = System.err
+                System.setErr(java.io.PrintStream(java.io.OutputStream.nullOutputStream()))
+                try {
+                    for (libName in getLoadOrder(platform)) {
+                        val libFile = File(nativeDir, libName)
+                        if (!libFile.isFile) continue
+                        try {
+                            @Suppress("UnsafeDynamicallyLoadedCode")
+                            System.load(libFile.absolutePath)
+                        } catch (_: UnsatisfiedLinkError) {
+                            // Already loaded — fine
+                        }
+                    }
+                } finally {
+                    System.setErr(originalErr)
+                }
+            }
+
+
+
+            private fun extractAllNatives(cl: ClassLoader, platform: String, targetDir: File) {
+                val prefixes = listOf(
+                    "org/bytedeco/javacpp/$platform",
+                    "org/bytedeco/ffmpeg/$platform"
+                )
+                for (prefix in prefixes) {
+                    for (libName in getAllNativeNames(platform)) {
+                        try {
+                            val stream = cl.getResourceAsStream("$prefix/$libName") ?: continue
+                            val target = File(targetDir, libName)
+                            if (!target.exists() || target.length() == 0L) {
+                                stream.use { input ->
+                                    target.outputStream().use { output -> input.copyTo(output) }
+                                }
+                            } else {
+                                stream.close()
+                            }
+                        } catch (_: Exception) { /* skip */ }
+                    }
+                }
+            }
+
+            private fun detectPlatform(): String {
+                val os = System.getProperty("os.name", "").lowercase()
+                val arch = System.getProperty("os.arch", "").lowercase()
+                return when {
+                    os.contains("win") && (arch == "amd64" || arch == "x86_64") -> "windows-x86_64"
+                    os.contains("linux") && (arch == "amd64" || arch == "x86_64") -> "linux-x86_64"
+                    else -> throw UnsupportedOperationException("Unsupported platform: $os/$arch")
+                }
+            }
+
+            private fun getAllNativeNames(platform: String): List<String> {
+                return if (platform.startsWith("windows")) listOf(
+                    "api-ms-win-crt-locale-l1-1-0.dll", "api-ms-win-crt-runtime-l1-1-0.dll",
+                    "api-ms-win-crt-stdio-l1-1-0.dll", "api-ms-win-crt-math-l1-1-0.dll",
+                    "api-ms-win-crt-heap-l1-1-0.dll", "api-ms-win-crt-string-l1-1-0.dll",
+                    "api-ms-win-crt-convert-l1-1-0.dll", "api-ms-win-crt-time-l1-1-0.dll",
+                    "api-ms-win-crt-environment-l1-1-0.dll", "api-ms-win-crt-process-l1-1-0.dll",
+                    "api-ms-win-crt-conio-l1-1-0.dll", "api-ms-win-crt-filesystem-l1-1-0.dll",
+                    "api-ms-win-crt-utility-l1-1-0.dll", "api-ms-win-crt-multibyte-l1-1-0.dll",
+                    "api-ms-win-crt-private-l1-1-0.dll",
+                    "ucrtbase.dll", "vcruntime140.dll", "vcruntime140_1.dll",
+                    "vcruntime140_threads.dll",
+                    "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll",
+                    "concrt140.dll", "vcomp140.dll", "libomp140.x86_64.dll",
+                    "jnijavacpp.dll",
+                    "avutil-60.dll", "swresample-6.dll", "avcodec-62.dll", "avformat-62.dll",
+                    "jniavutil.dll", "jniswresample.dll", "jniavcodec.dll", "jniavformat.dll"
+                ) else listOf(
+                    "libjnijavacpp.so",
+                    "libavutil.so.60", "libswresample.so.6", "libavcodec.so.62", "libavformat.so.62",
+                    "libjniavutil.so", "libjniswresample.so", "libjniavcodec.so", "libjniavformat.so"
+                )
+            }
+
+            private fun getLoadOrder(platform: String): List<String> {
+                return if (platform.startsWith("windows")) listOf(
+                    // 1. MSVC/Universal CRT runtime
+                    "vcruntime140.dll", "vcruntime140_1.dll", "vcruntime140_threads.dll",
+                    "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll",
+                    "ucrtbase.dll", "concrt140.dll", "vcomp140.dll", "libomp140.x86_64.dll",
+                    // 2. JavaCPP core JNI
+                    "jnijavacpp.dll",
+                    // 3. FFmpeg shared libs (dependency order)
+                    "avutil-60.dll", "swresample-6.dll", "avcodec-62.dll", "avformat-62.dll",
+                    // 4. FFmpeg JNI bridges
+                    "jniavutil.dll", "jniswresample.dll", "jniavcodec.dll", "jniavformat.dll"
+                ) else listOf(
+                    "libjnijavacpp.so",
+                    "libavutil.so.60", "libswresample.so.6",
+                    "libavcodec.so.62", "libavformat.so.62",
+                    "libjniavutil.so", "libjniswresample.so",
+                    "libjniavcodec.so", "libjniavformat.so"
+                )
             }
 
             private fun configureJavaCppCacheDir() {
@@ -874,7 +1108,10 @@ object CustomTrackPlayer {
     }
 
     fun prepareStream(file: File, shouldCancel: () -> Boolean = { false }): AudioStream? {
-        if (!file.isFile || file.length() < 4L) return null
+        if (!file.isFile || file.length() < 4L) {
+            dev.mcrib884.musync.MuSyncLog.debug("prepareStream: file check failed (exists=${file.isFile}, size=${if (file.isFile) file.length() else -1}): ${file.name}")
+            return null
+        }
         val magicBytes = readFileMagic(file)
         if (magicBytes.size < 4) return null
         val magic = String(magicBytes, 0, 4, Charsets.US_ASCII)
@@ -883,9 +1120,13 @@ object CustomTrackPlayer {
             when {
                 hintedExt == "wav" || magic == "RIFF" -> WavFileStream(file)
                 hintedExt == "ogg" || magic == "OggS" -> OggStream(file.readBytes())
-                else -> FfmpegCompressedStream(file, shouldCancel)
+                else -> if (FfmpegCompressedStream.isFfmpegAvailable()) FfmpegCompressedStream(file, shouldCancel) else {
+                    dev.mcrib884.musync.MuSyncLog.warn("prepareStream: FFmpeg not available for ${file.name}")
+                    null
+                }
             }
         } catch (_: CancellationException) {
+            dev.mcrib884.musync.MuSyncLog.debug("prepareStream: cancelled during decode of ${file.name}")
             null
         } catch (e: Throwable) {
             dev.mcrib884.musync.MuSyncLog.error("Error preparing audio stream: ${e.message}")
@@ -901,7 +1142,7 @@ object CustomTrackPlayer {
             when {
                 hintedExt == "wav" || magic == "RIFF" -> WavStream(audioData)
                 hintedExt == "ogg" || magic == "OggS" -> OggStream(audioData)
-                else -> FfmpegCompressedStream(audioData, sourceName, shouldCancel)
+                else -> if (FfmpegCompressedStream.isFfmpegAvailable()) FfmpegCompressedStream(audioData, sourceName, shouldCancel) else null
             }
         } catch (_: CancellationException) {
             null

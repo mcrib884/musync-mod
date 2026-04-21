@@ -639,8 +639,7 @@ enum class MuSyncThemePreset(val id: String, val label: String, val palette: MuS
 
 object ClientTrackManager {
 
-    private val SAFE_INTERNAL_NAME = Regex("^[\\p{L}\\p{N}_\\-]+\\.(ogg|wav|mp3)$")
-    private val SUPPORTED_EXTENSIONS = setOf("ogg", "wav", "mp3")
+    private val SUPPORTED_EXTENSIONS = dev.mcrib884.musync.TrackNameUtil.SUPPORTED_EXTENSIONS
 
     private data class ManifestTrackState(
         val entry: TrackManifestEntry,
@@ -652,12 +651,11 @@ object ClientTrackManager {
     )
 
     private fun normalizeInternalName(name: String): String? {
-        val normalized = name.lowercase(Locale.ROOT).replace(" ", "_")
-        if (!SAFE_INTERNAL_NAME.matches(normalized)) {
+        val result = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(name)
+        if (result == null) {
             dev.mcrib884.musync.MuSyncLog.warn("Rejected unsafe track name: $name")
-            return null
         }
-        return normalized
+        return result
     }
 
     fun displayTrackName(internalName: String): String {
@@ -976,8 +974,15 @@ object ClientTrackManager {
                 continue
             }
             val entry = if (internalName == rawEntry.name) rawEntry else rawEntry.copy(name = internalName)
-            if (hasValidTrackFile(localTracks[internalName], entry)) continue
-            if (hasUsableCachedTrack(cachedTracks[internalName], entry)) continue
+            if (hasValidTrackFile(localTracks[internalName], entry)) {
+                dev.mcrib884.musync.MuSyncLog.debug("Track '$internalName' found in local customtracks/")
+                continue
+            }
+            if (hasUsableCachedTrack(cachedTracks[internalName], entry)) {
+                dev.mcrib884.musync.MuSyncLog.debug("Track '$internalName' found in disk cache")
+                continue
+            }
+            dev.mcrib884.musync.MuSyncLog.debug("Track '$internalName' not cached, will download (size=${entry.size}, sha256=${entry.sha256.take(12)}...)")
             missing.add(entry)
             downloadStates[entry.name] = ManifestTrackState(entry)
         }

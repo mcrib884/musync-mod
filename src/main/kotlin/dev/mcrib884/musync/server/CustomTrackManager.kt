@@ -1,5 +1,6 @@
 package dev.mcrib884.musync.server
 
+import dev.mcrib884.musync.TrackNameUtil
 import dev.mcrib884.musync.network.PacketIO
 import dev.mcrib884.musync.network.TrackManifestEntry
 import java.io.File
@@ -8,10 +9,7 @@ import java.util.Locale
 
 object CustomTrackManager {
 
-    private val SAFE_BASE = Regex("^[\\p{L}\\p{N}_\\-]+$")
-    private val SAFE_INTERNAL = Regex("^[\\p{L}\\p{N}_\\-]+\\.(ogg|wav|mp3)$")
-    private val SUPPORTED_EXTENSIONS = setOf("ogg", "wav", "mp3")
-    private val UNSAFE_CHARS = Regex("[^\\p{L}\\p{N}_\\-]")
+    private val SUPPORTED_EXTENSIONS = TrackNameUtil.SUPPORTED_EXTENSIONS
 
     private data class TrackInfo(val file: File, val size: Long, val sha256: String)
     @Volatile
@@ -41,8 +39,8 @@ object CustomTrackManager {
         }).sortedBy { it.name.lowercase() }
 
         for (file in audioFiles) {
-            val baseName = normalizeBaseName(file.nameWithoutExtension)
-            if (!SAFE_BASE.matches(baseName)) {
+            val baseName = TrackNameUtil.normalizeBaseName(file.nameWithoutExtension)
+            if (!TrackNameUtil.isSafeBaseName(baseName)) {
                 dev.mcrib884.musync.MuSyncLog.warn("Skipping unsafe custom track name: ${file.name}")
                 continue
             }
@@ -70,14 +68,7 @@ object CustomTrackManager {
         dev.mcrib884.musync.MuSyncLog.info("Indexed ${tracks.size} custom tracks from ${folder.absolutePath}")
     }
 
-    private fun normalizeBaseName(name: String): String {
-        return name
-            .lowercase(Locale.ROOT)
-            .replace(" ", "_")
-            .replace(UNSAFE_CHARS, "_")
-            .replace(Regex("_+"), "_")
-            .trim('_')
-    }
+    private fun normalizeBaseName(name: String): String = TrackNameUtil.normalizeBaseName(name)
 
     private fun uniqueInternalName(baseName: String, extension: String, existing: Map<String, TrackInfo>): String {
         var candidate = "$baseName.$extension"
@@ -92,16 +83,15 @@ object CustomTrackManager {
         return candidate
     }
 
+
     private fun resolveInternalName(name: String): String? {
         val normalized = name.lowercase(Locale.ROOT).replace(" ", "_")
         val maybeExt = normalized.substringAfterLast('.', "")
         val hasExt = maybeExt in SUPPORTED_EXTENSIONS && normalized.contains('.')
 
         if (hasExt) {
-            val rawBase = normalized.substringBeforeLast('.')
-            val base = normalizeBaseName(rawBase)
-            val candidate = "$base.$maybeExt"
-            if (SAFE_INTERNAL.matches(candidate) && tracks.containsKey(candidate)) return candidate
+            val candidate = TrackNameUtil.normalizeInternalName(normalized)
+            if (candidate != null && tracks.containsKey(candidate)) return candidate
             return null
         }
 

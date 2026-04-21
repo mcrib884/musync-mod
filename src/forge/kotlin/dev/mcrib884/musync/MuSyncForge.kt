@@ -128,6 +128,14 @@ class MuSyncForge {
             /*MinecraftForge.EVENT_BUS.addListener<net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggedInEvent> { _ ->*/
             //?}
                 ClientTrackManager.onWorldLoaded()
+                // Eagerly init FFmpeg on a background thread so the
+                // ~2s DLL extraction/loading happens now instead of
+                // delaying the first custom track playback.
+                Thread({
+                    try {
+                        dev.mcrib884.musync.client.CustomTrackPlayer.FfmpegCompressedStream.isFfmpegAvailable()
+                    } catch (_: Throwable) { /* logged internally */ }
+                }, "MuSync-FFmpegInit").apply { isDaemon = true; start() }
             }
         }
 
