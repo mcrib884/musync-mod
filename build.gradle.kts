@@ -292,20 +292,9 @@ publishMods {
 	displayName.set(uploadName)
 	version.set(uploadName)
 
-	val cfToken = providers.environmentVariable("CURSEFORGE_TOKEN")
 	val mrToken = providers.environmentVariable("MODRINTH_TOKEN")
 
 	val publishMcVersion = if (mcVersion == "1.21.11") "1.21.1" else mcVersion
-
-	if (cfToken.isPresent) {
-		curseforge {
-			projectId.set("1474038")
-			accessToken.set(cfToken)
-			minecraftVersions.add(publishMcVersion)
-			clientRequired.set(true)
-			serverRequired.set(true)
-		}
-	}
 
 	if (mrToken.isPresent) {
 		modrinth {
