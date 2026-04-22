@@ -1,0 +1,36 @@
+modLoader = "kotlinforforge"
+loaderVersion = "[4,)"
+issueTrackerURL = "https://github.com/mcrib884/musync/issues"
+license = "MIT"
+
+[[mods]]
+modId = "musync"
+version = "1.9.2"
+displayName = "MuSync"
+authors = "mcrib884"
+description = "Synchronizes background music across all players on a server with extensive controls and custom music support."
+logoFile = "icon.png"
+
+[[dependencies."musync"]]
+modId = "forge"
+mandatory = true
+versionRange = "[47.2.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies."musync"]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,1.20.2)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies."musync"]]
+modId = "kotlinforforge"
+mandatory = true
+versionRange = "[4,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[mixins]]
+config = "musync.mixins.json"

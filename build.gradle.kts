@@ -301,6 +301,12 @@ publishMods {
 			projectId.set("Pdt1iYTy")
 			accessToken.set(mrToken)
 			minecraftVersions.add(publishMcVersion)
+			
+			if (loaderPlatform == "fabric") {
+				requires("fabric-language-kotlin")
+			} else {
+				requires("kotlin-for-forge")
+			}
 		}
 	}
 }

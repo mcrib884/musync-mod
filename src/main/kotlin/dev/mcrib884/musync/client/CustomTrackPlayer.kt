@@ -439,7 +439,9 @@ object CustomTrackPlayer {
             val currentPacket = packet
             val currentFrame = frame
 
-            val targetTimestamp = av_rescale_q(ms.coerceAtLeast(0L), MILLIS_TIME_BASE, currentStream.time_base())
+            val millisTimeBase = AVRational().num(1).den(1000)
+            val targetTimestamp = av_rescale_q(ms.coerceAtLeast(0L), millisTimeBase, currentStream.time_base())
+            millisTimeBase.close()
             val seekResult = av_seek_frame(currentFormat, streamIndex, targetTimestamp, AVSEEK_FLAG_BACKWARD)
             if (seekResult < 0) {
                 throw Exception("FFmpeg: seek failed ($seekResult)")
@@ -617,7 +619,10 @@ object CustomTrackPlayer {
 
             val streamDuration = openedStream.duration()
             if (streamDuration > 0L && streamDuration != AV_NOPTS_VALUE.toLong()) {
-                return av_rescale_q(streamDuration, openedStream.time_base(), MILLIS_TIME_BASE)
+                val millisTimeBase = AVRational().num(1).den(1000)
+                val durationMs = av_rescale_q(streamDuration, openedStream.time_base(), millisTimeBase)
+                millisTimeBase.close()
+                return durationMs
             }
 
             return -1L
@@ -1182,7 +1187,6 @@ object CustomTrackPlayer {
     private const val BUFFER_SIZE = 65536
     private const val BUFFER_COUNT = 4
     private const val STOP_WAIT_MS = 250L
-    private val MILLIS_TIME_BASE by lazy(LazyThreadSafetyMode.PUBLICATION) { AVRational().num(1).den(1000) }
 
     private fun closeQuietly(stream: AudioStream?) {
         if (stream == null) return
