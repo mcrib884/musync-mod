@@ -23,6 +23,14 @@ import net.minecraftforge.registries.ForgeRegistries
 /*import net.minecraft.core.Registry*/
 //?}
 
+//? if fabric {
+/*import net.fabricmc.loader.api.FabricLoader*/
+//?} else if neoforge {
+/*import net.neoforged.fml.loading.FMLPaths*/
+//?} else {
+import net.minecraftforge.fml.loading.FMLPaths
+//?}
+
 //? if >=1.21 {
 /*internal fun resLoc(namespace: String, path: String): ResourceLocation =
 	ResourceLocation.fromNamespaceAndPath(namespace, path)*/
@@ -38,11 +46,10 @@ internal fun currentServer(): MinecraftServer? = ServerLifecycleHooks.getCurrent
 //?}
 
 internal fun serverDir(server: MinecraftServer?): java.io.File {
-	server ?: return java.io.File(".")
-	//? if >=1.21 {
-	/*return server.serverDirectory.toFile()*/
+	//? if fabric {
+	/*return FabricLoader.getInstance().gameDir.toFile()*/
 	//?} else {
-	return server.serverDirectory
+	return FMLPaths.GAMEDIR.get().toFile()
 	//?}
 }
 

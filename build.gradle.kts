@@ -123,21 +123,9 @@ dependencies {
 		}
 	}
 
-	// bytedeco/FFmpeg — compileOnly so we compile against it but don't bundle .class files.
-	// At runtime, bytedeco Java classes are provided by watermedia or another mod.
-	// We ONLY bundle the native DLLs/SOs — these don't create JPMS packages and won't conflict.
-	compileOnly("org.bytedeco:javacpp:1.5.13")
-	compileOnly("org.bytedeco:ffmpeg:8.0.1-1.5.13")
-
-	// Native-only deps: we extract ONLY .dll/.so files from these (no .class files)
-	val nativeBundle by configurations.creating { isTransitive = false }
-	nativeBundle("org.bytedeco:javacpp:1.5.13:windows-x86_64")
-	nativeBundle("org.bytedeco:javacpp:1.5.13:linux-x86_64")
-	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13:windows-x86_64")
-	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13:linux-x86_64")
-	// Also need the base JARs for pom.properties (version detection)
-	nativeBundle("org.bytedeco:javacpp:1.5.13")
-	nativeBundle("org.bytedeco:ffmpeg:8.0.1-1.5.13")
+	implementation("javazoom:jlayer:1.0.1")
+	val embeddedLibrary by configurations.creating { isTransitive = false }
+	embeddedLibrary("javazoom:jlayer:1.0.1")
 }
 if (loaderPlatform == "neoforge") {
 	configurations.all {
@@ -148,43 +136,20 @@ if (loaderPlatform == "neoforge") {
 
 val javaVersion: String by project
 
-// Extract ONLY native libraries (DLLs/SOs) and version metadata from bytedeco JARs.
-// No .class files → no JPMS package conflicts with watermedia or any other mod.
-val extractNatives = tasks.register("extractNatives", Sync::class) {
+val extractEmbeddedLibraries = tasks.register("extractEmbeddedLibraries", Sync::class) {
 	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	from(provider {
-		configurations.named("nativeBundle").get().files.map { zipTree(it) }
+		configurations.named("embeddedLibrary").get().files.map { zipTree(it) }
 	}) {
-		// ── Native libraries only (no .class files!) ──
-		// Windows
-		include("org/bytedeco/ffmpeg/windows-x86_64/avcodec-*.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/avformat-*.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/avutil-*.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/swresample-*.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/jniavcodec.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/jniavformat.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/jniavutil.dll")
-		include("org/bytedeco/ffmpeg/windows-x86_64/jniswresample.dll")
-		include("org/bytedeco/javacpp/windows-x86_64/*.dll")
-		// Linux
-		include("org/bytedeco/ffmpeg/linux-x86_64/libavcodec*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libavformat*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libavutil*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libswresample*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavcodec*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavformat*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libjniavutil*")
-		include("org/bytedeco/ffmpeg/linux-x86_64/libjniswresample*")
-		include("org/bytedeco/javacpp/linux-x86_64/*")
-		// Version metadata (needed by JavaCPP Loader for library discovery)
-		include("META-INF/maven/org.bytedeco/**/pom.properties")
+		include("javazoom/jl/**")
+		exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
 		includeEmptyDirs = false
 	}
-	into(layout.buildDirectory.dir("generated/natives"))
+	into(layout.buildDirectory.dir("generated/embedded-libs"))
 }
 tasks.named<Jar>("jar") {
-	dependsOn(extractNatives)
-	from(extractNatives)
+	dependsOn(extractEmbeddedLibraries)
+	from(extractEmbeddedLibraries)
 	manifest.attributes("MixinConfigs" to "musync.mixins.json")
 }
 
@@ -294,13 +259,11 @@ publishMods {
 
 	val mrToken = providers.environmentVariable("MODRINTH_TOKEN")
 
-	val publishMcVersion = if (mcVersion == "1.21.11") "1.21.1" else mcVersion
-
 	if (mrToken.isPresent) {
 		modrinth {
 			projectId.set("Pdt1iYTy")
 			accessToken.set(mrToken)
-			minecraftVersions.add(publishMcVersion)
+			minecraftVersions.add(mcVersion)
 			
 			if (loaderPlatform == "fabric") {
 				requires("fabric-language-kotlin")

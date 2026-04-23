@@ -214,7 +214,6 @@ object ClientMusicPlayer {
         if (!tracksDir.isDirectory) return null
         val exact = File(tracksDir, fileName)
         if (exact.isFile) return exact
-        // Use the same normalization as the server (TrackNameUtil) for fuzzy matching
         val normalizedTarget = dev.mcrib884.musync.TrackNameUtil.normalizeInternalName(fileName)
             ?: fileName.lowercase(java.util.Locale.ROOT).replace(" ", "_")
         return tracksDir.listFiles()?.firstOrNull { file ->

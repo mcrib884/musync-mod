@@ -2312,7 +2312,6 @@ object MusicManager {
         val configDir = java.io.File("config")
         if (!configDir.exists()) configDir.mkdirs()
         val newFile = java.io.File(configDir, "musync_dimension_delays.properties")
-        // Migrate from old location (<gameDir>/musync/dimension_delays.properties)
         if (!newFile.exists()) {
             try {
                 val server = currentServer()
@@ -2326,7 +2325,6 @@ object MusicManager {
                 dev.mcrib884.musync.MuSyncLog.warn("Failed to migrate dimension delays: ${e.message}")
             }
         }
-        // Clean up old musync/ folder from game directory
         try {
             val sDir = serverDir(currentServer())
             val oldDir = java.io.File(sDir, "musync")
