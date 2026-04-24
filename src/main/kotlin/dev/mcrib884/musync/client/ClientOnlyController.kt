@@ -1,5 +1,8 @@
 package dev.mcrib884.musync.client
 
+//? if <1.21.11 {
+import dev.mcrib884.musync.biomeBackgroundMusic
+//?}
 import dev.mcrib884.musync.createSoundEvent
 import dev.mcrib884.musync.entityLevel
 import dev.mcrib884.musync.musicEventLocation
@@ -603,11 +606,17 @@ object ClientOnlyController {
             musicEventLocation(music).toString()
         } catch (_: Exception) { null }
     }*/
+    //?} else if >=1.21.4 {
+    /*private fun getClientBiomeMusicEvent(player: LocalPlayer): String? {
+        return try {
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
+            musicEventLocation(music).toString()
+        } catch (_: Exception) { null }
+    }*/
     //?} else {
     private fun getClientBiomeMusicEvent(player: LocalPlayer): String? {
         return try {
-            val music = player.entityLevel().getBiome(player.blockPosition()).value()
-                .getBackgroundMusic().orElse(null) ?: return null
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
             musicEventLocation(music).toString()
         } catch (_: Exception) { null }
     }

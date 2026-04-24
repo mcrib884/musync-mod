@@ -184,13 +184,13 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
         deleteBounds = BtnBounds(panelX + 174, btnY, 60, 16, "Delete")
     }
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
     //?}
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if >=1.21 {
+        //? if >=1.20.2 {
         /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
         //?} else {
         renderBackground(graphics)
@@ -721,7 +721,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     }
     //?}
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, delta: Double): Boolean {*/
     //?} else {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, delta: Double): Boolean {

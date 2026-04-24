@@ -268,13 +268,13 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
         queueBounds = BtnBounds(panelX + panelW - btnW - 6, btnY, btnW, 16, "+ Queue", false)
     }
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
     //?}
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if >=1.21 {
+        //? if >=1.20.2 {
         /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
         //?} else {
         renderBackground(graphics)
@@ -602,7 +602,7 @@ class TrackBrowserScreen : Screen(Component.literal("MuSync - Tracks")) {
     }
     //?}
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun mouseScrolled(mouseX: Double, mouseY: Double, scrollX: Double, delta: Double): Boolean {*/
     //?} else {
     override fun mouseScrolled(mouseX: Double, mouseY: Double, delta: Double): Boolean {

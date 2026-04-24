@@ -11,8 +11,12 @@ import net.minecraft.resources.ResourceLocation
 //?}
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
 //?} else if forge {
+//? if >=1.20.2 {
+/*import net.minecraftforge.event.network.CustomPayloadEvent*/
+//?} else {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
+//?}
 //?}
 
 data class CustomTrackDataPacket(
@@ -58,6 +62,16 @@ data class CustomTrackDataPacket(
         }
 
         //? if forge {
+        //? if >=1.20.2 {
+        /*fun handle(packet: CustomTrackDataPacket, ctx: net.minecraftforge.event.network.CustomPayloadEvent.Context) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.CustomTrackCache.handleChunk(
+                    packet.trackName, packet.chunkIndex, packet.totalChunks, packet.data
+                )
+            }
+            ctx.setPacketHandled(true)
+        }*/
+        //?} else {
         fun handle(packet: CustomTrackDataPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
                 dev.mcrib884.musync.client.CustomTrackCache.handleChunk(
@@ -66,6 +80,7 @@ data class CustomTrackDataPacket(
             }
             ctx.get().packetHandled = true
         }
+        //?}
         //?} else if neoforge {
         /*fun handleNeo(packet: CustomTrackDataPacket, ctx: IPayloadContext) {
             ctx.enqueueWork {
@@ -77,3 +92,4 @@ data class CustomTrackDataPacket(
         //?}
     }
 }
+

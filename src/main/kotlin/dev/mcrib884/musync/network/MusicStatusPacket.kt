@@ -11,8 +11,12 @@ import net.minecraft.resources.ResourceLocation
 //?}
 import net.neoforged.neoforge.network.handling.IPayloadContext*/
 //?} else if forge {
+//? if >=1.20.2 {
+/*import net.minecraftforge.event.network.CustomPayloadEvent*/
+//?} else {
 import net.minecraftforge.network.NetworkEvent
 import java.util.function.Supplier
+//?}
 //?}
 
 data class MusicStatusPacket(
@@ -139,13 +143,21 @@ data class MusicStatusPacket(
         }
 
         //? if forge {
+        //? if >=1.20.2 {
+        /*fun handle(packet: MusicStatusPacket, ctx: net.minecraftforge.event.network.CustomPayloadEvent.Context) {
+            ctx.enqueueWork {
+                dev.mcrib884.musync.client.ClientMusicPlayer.updateStatus(packet)
+            }
+            ctx.setPacketHandled(true)
+        }*/
+        //?} else {
         fun handle(packet: MusicStatusPacket, ctx: Supplier<NetworkEvent.Context>) {
             ctx.get().enqueueWork {
-
                 dev.mcrib884.musync.client.ClientMusicPlayer.updateStatus(packet)
             }
             ctx.get().packetHandled = true
         }
+        //?}
         //?} else if neoforge {
         /*fun handleNeo(packet: MusicStatusPacket, ctx: IPayloadContext) {
             ctx.enqueueWork {
@@ -155,3 +167,4 @@ data class MusicStatusPacket(
         //?}
     }
 }
+

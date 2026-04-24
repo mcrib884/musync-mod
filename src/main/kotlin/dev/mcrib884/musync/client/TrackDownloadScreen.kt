@@ -54,13 +54,13 @@ class TrackDownloadScreen : Screen(Component.literal("MuSync - Syncing Tracks"))
     private fun isDownloadDone(): Boolean =
         closeCountdown >= 0 || showingFailedOverlay || ClientTrackManager.downloadComplete
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
     //?}
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if >=1.21 {
+        //? if >=1.20.2 {
         /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
         //?} else {
         renderBackground(graphics)

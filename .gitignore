@@ -18,22 +18,19 @@ replay_*.log
 *.hprof
 *.jfr
 
-/*.jar
+/musync-*.jar
 jdks/
 run_build.bat
 run_clean_build.bat
-run_client_1.19.2.bat
-run_client_1.20.1.bat
-run_client_1.21.1.bat
-run_client_1.21.11.bat
-run_client_1.19.2-fabric.bat
-run_client_1.20.1-fabric.bat
-run_client_1.21.1-fabric.bat
-run_client_1.21.11-fabric.bat
+publish_mods.bat
+run_client_*.bat
+run_server_*.bat
+run_data_*.bat
 
 
 logo.png
 logo.png~
 publish_env.bat
-publish_mods.bat
 changelog.md
+build_output.txt
+.gradle-task-list.txt

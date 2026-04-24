@@ -93,7 +93,9 @@ dependencies {
 	minecraft("com.mojang:minecraft:$mcVersion")
 	mappings(loom.layered {
 		officialMojangMappings()
-		parchment("org.parchmentmc.data:parchment-$parchmentMinecraftVersion:$parchmentMappingsVersion@zip")
+		if (parchmentMinecraftVersion.isNotBlank() && parchmentMappingsVersion.isNotBlank()) {
+			parchment("org.parchmentmc.data:parchment-$parchmentMinecraftVersion:$parchmentMappingsVersion@zip")
+		}
 	})
 
 	when (loaderPlatform) {

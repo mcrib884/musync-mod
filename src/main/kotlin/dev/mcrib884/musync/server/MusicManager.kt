@@ -1,7 +1,13 @@
 package dev.mcrib884.musync.server
 
 import dev.mcrib884.musync.currentServer
+//? if <1.21.11 {
+import dev.mcrib884.musync.biomeBackgroundMusic
+//?}
 import dev.mcrib884.musync.musicEventLocation
+import dev.mcrib884.musync.musicMaxDelay
+import dev.mcrib884.musync.musicMinDelay
+import dev.mcrib884.musync.musicReplacesCurrent
 import dev.mcrib884.musync.network.*
 import dev.mcrib884.musync.serverDir
 import net.minecraft.server.level.ServerPlayer
@@ -176,7 +182,7 @@ object MusicManager {
 
     //? if >=1.21.11 {
     /*private fun isPlayerOp(player: ServerPlayer): Boolean {
-        return player.level().getServer().playerList.isOp(player.nameAndId())
+        return player.level().getServer()?.playerList?.isOp(player.nameAndId()) == true
     }*/
     //?} else {
     private fun isPlayerOp(player: ServerPlayer): Boolean {
@@ -213,23 +219,35 @@ object MusicManager {
             val bgMusic = player.entityLevel().environmentAttributes()
                 .getValue(net.minecraft.world.attribute.EnvironmentAttributes.BACKGROUND_MUSIC, player.blockPosition())
             val music = bgMusic.defaultMusic().orElse(null) ?: return null
-            MusicTiming(music.minDelay, music.maxDelay, music.replaceCurrentMusic())
+            MusicTiming(musicMinDelay(music), musicMaxDelay(music), musicReplacesCurrent(music))
         } catch (_: Exception) { null }
     }*/
-    //?} else {
-    private fun getBiomeMusicEvent(player: ServerPlayer): String? {
+    //?} else if >=1.21.4 {
+    /*private fun getBiomeMusicEvent(player: ServerPlayer): String? {
         return try {
-            val music = player.entityLevel().getBiome(player.blockPosition()).value()
-                .getBackgroundMusic().orElse(null) ?: return null
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
             musicEventLocation(music).toString()
         } catch (_: Exception) { null }
     }
 
     private fun getBiomeMusicTiming(player: ServerPlayer): MusicTiming? {
         return try {
-            val music = player.entityLevel().getBiome(player.blockPosition()).value()
-                .getBackgroundMusic().orElse(null) ?: return null
-            MusicTiming(music.minDelay, music.maxDelay, music.replaceCurrentMusic())
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
+            MusicTiming(musicMinDelay(music), musicMaxDelay(music), musicReplacesCurrent(music))
+        } catch (_: Exception) { null }
+    }*/
+    //?} else {
+    private fun getBiomeMusicEvent(player: ServerPlayer): String? {
+        return try {
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
+            musicEventLocation(music).toString()
+        } catch (_: Exception) { null }
+    }
+
+    private fun getBiomeMusicTiming(player: ServerPlayer): MusicTiming? {
+        return try {
+            val music = biomeBackgroundMusic(player.entityLevel().getBiome(player.blockPosition()).value()) ?: return null
+            MusicTiming(musicMinDelay(music), musicMaxDelay(music), musicReplacesCurrent(music))
         } catch (_: Exception) { null }
     }
     //?}
@@ -1081,8 +1099,8 @@ object MusicManager {
 
         if (dimension == "minecraft:the_end") {
             try {
-                //? if >=1.21.11 {
-                /*val endLevel = player.level().getServer().getLevel(net.minecraft.world.level.Level.END)*/
+    //? if >=1.21.4 {
+                /*val endLevel = player.level().getServer()?.getLevel(net.minecraft.world.level.Level.END)*/
                 //?} else {
                 val endLevel = player.server.getLevel(net.minecraft.world.level.Level.END)
                 //?}

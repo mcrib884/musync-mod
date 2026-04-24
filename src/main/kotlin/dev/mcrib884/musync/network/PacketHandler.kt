@@ -33,8 +33,13 @@ import net.minecraft.server.level.ServerPlayer
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload*/
 //?} else if forge {
+//? if >=1.20.2 {
+/*import net.minecraftforge.network.ChannelBuilder
+import net.minecraftforge.network.SimpleChannel*/
+//?} else {
 import net.minecraftforge.network.NetworkRegistry
 import net.minecraftforge.network.simple.SimpleChannel
+//?}
 //?}
 
 object PacketHandler {
@@ -243,17 +248,30 @@ object PacketHandler {
     //?}
 
     //? if forge {
+    //? if >=1.20.2 {
+    /*val INSTANCE: SimpleChannel = ChannelBuilder.named(ResourceLocation(MOD_ID, "main"))
+        .networkProtocolVersion(1)
+        .simpleChannel()*/
+    //?} else {
     val INSTANCE: SimpleChannel = NetworkRegistry.newSimpleChannel(
         ResourceLocation(MOD_ID, "main"),
         { PROTOCOL_VERSION },
         PROTOCOL_VERSION::equals,
         PROTOCOL_VERSION::equals
     )
+    //?}
 
     private var packetId = 0
 
     fun register() {
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(MusicSyncPacket::class.java, packetId++)
+            .encoder(MusicSyncPacket::encode)
+            .decoder(MusicSyncPacket::decode)
+            .consumerMainThread(MusicSyncPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             MusicSyncPacket::class.java,
@@ -261,7 +279,15 @@ object PacketHandler {
             MusicSyncPacket::decode,
             MusicSyncPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(MusicControlPacket::class.java, packetId++)
+            .encoder(MusicControlPacket::encode)
+            .decoder(MusicControlPacket::decode)
+            .consumerMainThread(MusicControlPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             MusicControlPacket::class.java,
@@ -269,7 +295,15 @@ object PacketHandler {
             MusicControlPacket::decode,
             MusicControlPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(MusicStatusPacket::class.java, packetId++)
+            .encoder(MusicStatusPacket::encode)
+            .decoder(MusicStatusPacket::decode)
+            .consumerMainThread(MusicStatusPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             MusicStatusPacket::class.java,
@@ -277,7 +311,15 @@ object PacketHandler {
             MusicStatusPacket::decode,
             MusicStatusPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(MusicClientInfoPacket::class.java, packetId++)
+            .encoder(MusicClientInfoPacket::encode)
+            .decoder(MusicClientInfoPacket::decode)
+            .consumerMainThread(MusicClientInfoPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             MusicClientInfoPacket::class.java,
@@ -285,7 +327,15 @@ object PacketHandler {
             MusicClientInfoPacket::decode,
             MusicClientInfoPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(CustomTrackDataPacket::class.java, packetId++)
+            .encoder(CustomTrackDataPacket::encode)
+            .decoder(CustomTrackDataPacket::decode)
+            .consumerMainThread(CustomTrackDataPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             CustomTrackDataPacket::class.java,
@@ -293,7 +343,15 @@ object PacketHandler {
             CustomTrackDataPacket::decode,
             CustomTrackDataPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(TrackManifestPacket::class.java, packetId++)
+            .encoder(TrackManifestPacket::encode)
+            .decoder(TrackManifestPacket::decode)
+            .consumerMainThread(TrackManifestPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             TrackManifestPacket::class.java,
@@ -301,7 +359,15 @@ object PacketHandler {
             TrackManifestPacket::decode,
             TrackManifestPacket::handle
         )
+        //?}
 
+        //? if >=1.20.2 {
+        /*INSTANCE.messageBuilder(TrackRequestPacket::class.java, packetId++)
+            .encoder(TrackRequestPacket::encode)
+            .decoder(TrackRequestPacket::decode)
+            .consumerMainThread(TrackRequestPacket::handle)
+            .add()*/
+        //?} else {
         INSTANCE.registerMessage(
             packetId++,
             TrackRequestPacket::class.java,
@@ -309,6 +375,7 @@ object PacketHandler {
             TrackRequestPacket::decode,
             TrackRequestPacket::handle
         )
+        //?}
     }
     //?}
 
@@ -363,7 +430,11 @@ object PacketHandler {
         //?} else if neoforge {
         /*PacketDistributor.sendToPlayer(player, packet as CustomPacketPayload)*/
         //?} else {
+        //? if >=1.20.2 {
+        /*INSTANCE.send(packet, net.minecraftforge.network.PacketDistributor.PLAYER.with(player))*/
+        //?} else {
         INSTANCE.send(net.minecraftforge.network.PacketDistributor.PLAYER.with { player }, packet)
+        //?}
         //?}
     }
 
@@ -403,7 +474,11 @@ object PacketHandler {
         /*PacketDistributor.sendToServer(packet as CustomPacketPayload)*/
         //?}
         //?} else {
+        //? if >=1.20.2 {
+        /*INSTANCE.send(packet, net.minecraftforge.network.PacketDistributor.SERVER.noArg())*/
+        //?} else {
         INSTANCE.send(net.minecraftforge.network.PacketDistributor.SERVER.noArg(), packet)
+        //?}
         //?}
     }
 }

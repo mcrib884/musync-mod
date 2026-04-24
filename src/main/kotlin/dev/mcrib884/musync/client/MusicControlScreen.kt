@@ -184,13 +184,13 @@ class MusicControlScreen : Screen(Component.literal("MuSync")) {
         volumeBarY = dimBtnY + topBtnSize + topBtnGap + 1
     }
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
     //?}
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if >=1.21 {
+        //? if >=1.20.2 {
         /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
         //?} else {
         renderBackground(graphics)
@@ -1506,13 +1506,13 @@ class MusicSettingsScreen : Screen(Component.literal("MuSync Settings")) {
         backBounds = BtnBounds(panelX + panelW - 72, panelY + panelH - 24, 60, 16, "Back")
     }
 
-    //? if >=1.21 {
+    //? if >=1.20.2 {
     /*override fun renderBackground(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {}*/
     //?}
 
     //? if >=1.20 {
     override fun render(graphics: GuiGraphics, mouseX: Int, mouseY: Int, partialTick: Float) {
-        //? if >=1.21 {
+        //? if >=1.20.2 {
         /*super.renderBackground(graphics, mouseX, mouseY, partialTick)*/
         //?} else {
         renderBackground(graphics)

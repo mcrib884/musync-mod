@@ -17,7 +17,7 @@ import net.minecraftforge.server.ServerLifecycleHooks
 //?}
 //? if forge {
 import net.minecraftforge.registries.ForgeRegistries
-//?} else if >=1.20 {
+//?} else if >=1.19.3 {
 /*import net.minecraft.core.registries.BuiltInRegistries*/
 //?} else {
 /*import net.minecraft.core.Registry*/
@@ -56,7 +56,7 @@ internal fun serverDir(server: MinecraftServer?): java.io.File {
 //? if forge {
 internal fun soundEventKeys(): Set<ResourceLocation> = ForgeRegistries.SOUND_EVENTS.keys
 internal fun soundEventContains(key: ResourceLocation): Boolean = ForgeRegistries.SOUND_EVENTS.containsKey(key)
-//?} else if >=1.20 {
+//?} else if >=1.19.3 {
 /*internal fun soundEventKeys(): Set<ResourceLocation> = BuiltInRegistries.SOUND_EVENT.keySet()
 internal fun soundEventContains(key: ResourceLocation): Boolean = BuiltInRegistries.SOUND_EVENT.containsKey(key)*/
 //?} else {
@@ -64,7 +64,7 @@ internal fun soundEventContains(key: ResourceLocation): Boolean = BuiltInRegistr
 internal fun soundEventContains(key: ResourceLocation): Boolean = Registry.SOUND_EVENT.containsKey(key)*/
 //?}
 
-//? if >=1.20 {
+//? if >=1.19.3 {
 internal fun createSoundEvent(location: ResourceLocation): net.minecraft.sounds.SoundEvent =
 	net.minecraft.sounds.SoundEvent.createVariableRangeEvent(location)
 //?} else {
@@ -83,7 +83,10 @@ internal fun CommandSourceStack.sendSuccessCompat(message: () -> Component, broa
 //? if >=1.21.11 {
 /*internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
 	music.sound().value().location*/
-//?} else if >=1.20 {
+//?} else if >=1.21.11 {
+/*internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
+	music.sound.value().location*/
+//?} else if >=1.19.3 {
 internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
 	music.event.value().location
 //?} else {
@@ -91,7 +94,29 @@ internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLoca
 	music.event.location*/
 //?}
 
-//? if >=1.20 {
+//? if >=1.21.11 {
+/*internal fun musicMinDelay(music: net.minecraft.sounds.Music): Int = music.minDelay
+internal fun musicMaxDelay(music: net.minecraft.sounds.Music): Int = music.maxDelay
+internal fun musicReplacesCurrent(music: net.minecraft.sounds.Music): Boolean = music.replaceCurrentMusic()*/
+//?} else {
+internal fun musicMinDelay(music: net.minecraft.sounds.Music): Int = music.getMinDelay()
+internal fun musicMaxDelay(music: net.minecraft.sounds.Music): Int = music.getMaxDelay()
+internal fun musicReplacesCurrent(music: net.minecraft.sounds.Music): Boolean = music.replaceCurrentMusic()
+//?}
+
+//? if >=1.21.11 {
+/* */
+//?} else if >=1.21.4 {
+/*internal fun biomeBackgroundMusic(biome: net.minecraft.world.level.biome.Biome): net.minecraft.sounds.Music? =
+	biome.getBackgroundMusic()
+		.flatMap { it.getRandomValue(net.minecraft.util.RandomSource.create()) }
+		.orElse(null)*/
+//?} else {
+internal fun biomeBackgroundMusic(biome: net.minecraft.world.level.biome.Biome): net.minecraft.sounds.Music? =
+	biome.getBackgroundMusic().orElse(null)
+//?}
+
+//? if >=1.19.3 {
 internal fun setMusicVolume(mc: net.minecraft.client.Minecraft, volume: Float) {
 	mc.options.getSoundSourceOptionInstance(net.minecraft.sounds.SoundSource.MUSIC).set(volume.toDouble())
 }
@@ -101,7 +126,7 @@ internal fun setMusicVolume(mc: net.minecraft.client.Minecraft, volume: Float) {
 }*/
 //?}
 
-//? if >=1.21.11 {
+//? if >=1.21.4 {
 /*internal fun playerServer(player: net.minecraft.server.level.ServerPlayer): net.minecraft.server.MinecraftServer =
 	player.level().getServer()!!*/
 //?} else {
