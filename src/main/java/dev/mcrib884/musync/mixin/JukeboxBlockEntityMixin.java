@@ -19,14 +19,7 @@ public abstract class JukeboxBlockEntityMixin {
         Level level = self.getLevel();
         if (level != null) {
             BlockPos pos = self.getBlockPos();
-            boolean playing;
-            try {
-                Object songPlayer = self.getClass().getMethod("getSongPlayer").invoke(self);
-                Object result = songPlayer != null ? songPlayer.getClass().getMethod("isPlaying").invoke(songPlayer) : null;
-                playing = result instanceof Boolean && (Boolean) result;
-            } catch (ReflectiveOperationException e) {
-                return;
-            }
+            boolean playing = !self.getItem(0).isEmpty();
             if (playing) {
                 JukeboxTracker.INSTANCE.onJukeboxStartPlaying(level.dimension(), pos);
             } else {

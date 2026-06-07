@@ -28,7 +28,7 @@ object Mp3AudioSupport {
         val bitstream = Bitstream(input)
         try {
             val decoder = Decoder()
-            val output = ByteArrayOutputStream(maxOf(32768, sourceSizeHint * 4))
+            val output = ByteArrayOutputStream(maxOf(65536, sourceSizeHint.coerceAtMost(10_000_000)))
             var sampleRate = 0
             var channelCount = 0
             var totalFrames = 0L

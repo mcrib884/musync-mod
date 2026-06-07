@@ -370,7 +370,7 @@ object CustomTrackPlayer {
         return try {
             when {
                 hintedExt == "wav" || magic == "RIFF" -> WavFileStream(file)
-                hintedExt == "ogg" || magic == "OggS" -> OggStream(file.readBytes())
+                hintedExt == "ogg" || magic == "OggS" -> OggFileStream(file)
                 isLikelyMp3(magicBytes, hintedExt) -> prepareMp3Stream(file, shouldCancel)
                 else -> null
             }

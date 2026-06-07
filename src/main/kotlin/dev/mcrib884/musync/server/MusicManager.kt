@@ -90,6 +90,7 @@ object MusicManager {
     private fun listenerLatency(player: ServerPlayer): Int {
         val connection = player.connection
         val methods = connection.javaClass.methods
+        val fields = connection.javaClass.fields
 
         val direct = methods.firstOrNull {
             it.parameterCount == 0 &&
@@ -100,6 +101,14 @@ object MusicManager {
             return runCatching { (direct.invoke(connection) as Number).toInt() }.getOrDefault(Int.MAX_VALUE)
         }
 
+        val fieldDirect = fields.firstOrNull {
+            (it.name == "latency" || it.name == "ping") &&
+                (it.type == Int::class.javaPrimitiveType || Number::class.java.isAssignableFrom(it.type))
+        }
+        if (fieldDirect != null) {
+            return runCatching { (fieldDirect.get(connection) as Number).toInt() }.getOrDefault(Int.MAX_VALUE)
+        }
+
         val fuzzy = methods.firstOrNull {
             it.parameterCount == 0 &&
                 (it.name.contains("latency", ignoreCase = true) || it.name.contains("ping", ignoreCase = true)) &&
@@ -107,6 +116,14 @@ object MusicManager {
         }
         if (fuzzy != null) {
             return runCatching { (fuzzy.invoke(connection) as Number).toInt() }.getOrDefault(Int.MAX_VALUE)
+        }
+
+        val fieldFuzzy = fields.firstOrNull {
+            (it.name.contains("latency", ignoreCase = true) || it.name.contains("ping", ignoreCase = true)) &&
+                (it.type == Int::class.javaPrimitiveType || Number::class.java.isAssignableFrom(it.type))
+        }
+        if (fieldFuzzy != null) {
+            return runCatching { (fieldFuzzy.get(connection) as Number).toInt() }.getOrDefault(Int.MAX_VALUE)
         }
 
         return Int.MAX_VALUE
@@ -388,27 +405,29 @@ object MusicManager {
     }
 
     private fun pollRandomQueuedTrack(avoidTrack: String? = null): String? {
-        val list = userPlaylist.toMutableList()
-        if (list.isEmpty()) return null
+        synchronized(userPlaylist) {
+            val list = userPlaylist.toMutableList()
+            if (list.isEmpty()) return null
 
-        val selectableIndexes = if (!avoidTrack.isNullOrEmpty()) {
-            val avoidCount = list.count { it == avoidTrack }
-            if (avoidCount <= 1) {
-                list.indices.filter { list[it] != avoidTrack }
+            val selectableIndexes = if (!avoidTrack.isNullOrEmpty()) {
+                val avoidCount = list.count { it == avoidTrack }
+                if (avoidCount <= 1) {
+                    list.indices.filter { list[it] != avoidTrack }
+                } else {
+                    list.indices.toList()
+                }
             } else {
                 list.indices.toList()
             }
-        } else {
-            list.indices.toList()
-        }
 
-        val candidateIndexes = if (selectableIndexes.isNotEmpty()) selectableIndexes else list.indices.toList()
-        val index = candidateIndexes[Random.nextInt(candidateIndexes.size)]
-        val nextTrack = list.removeAt(index)
-        userPlaylist.clear()
-        userPlaylist.addAll(list)
-        lastQueueAdvanceAt = System.currentTimeMillis()
-        return nextTrack
+            val candidateIndexes = if (selectableIndexes.isNotEmpty()) selectableIndexes else list.indices.toList()
+            val index = candidateIndexes[Random.nextInt(candidateIndexes.size)]
+            val nextTrack = list.removeAt(index)
+            userPlaylist.clear()
+            userPlaylist.addAll(list)
+            lastQueueAdvanceAt = System.currentTimeMillis()
+            return nextTrack
+        }
     }
 
     private fun cycleRepeatMode() {
@@ -692,11 +711,14 @@ object MusicManager {
         if (isPaused && currentTrack != null) {
             isPaused = false
             trackStartTime = System.currentTimeMillis() - pausedPosition
+            val resumeSpecific = if (specificSound.isNotEmpty()) specificSound
+                                 else resolvedTrackName ?: ""
             val packet = MusicSyncPacket(
                 trackId = currentTrack!!,
                 startPositionMs = pausedPosition,
                 serverTimeMs = System.currentTimeMillis(),
-                action = MusicSyncPacket.Action.RESUME
+                action = MusicSyncPacket.Action.RESUME,
+                specificSound = resumeSpecific
             )
             val server = currentServer() ?: return
             for (p in server.playerList.players) {
@@ -1478,11 +1500,14 @@ object MusicManager {
         if (stream.paused && stream.track != null) {
             stream.paused = false
             stream.startTime = System.currentTimeMillis() - stream.pausedPos
+            val resumeSpecific = if (stream.specific.isNotEmpty()) stream.specific
+                                 else stream.resolved ?: ""
             val packet = MusicSyncPacket(
                 trackId = stream.track!!,
                 startPositionMs = stream.pausedPos,
                 serverTimeMs = System.currentTimeMillis(),
-                action = MusicSyncPacket.Action.RESUME
+                action = MusicSyncPacket.Action.RESUME,
+                specificSound = resumeSpecific
             )
             val server = currentServer() ?: return
             for (p in server.playerList.players) {
@@ -2241,8 +2266,15 @@ object MusicManager {
     }
 
     fun onServerStarted() {
-        if (trackSendExecutor.isShutdown || trackSendExecutor.isTerminated) {
-            trackSendExecutor = createTrackSendExecutor()
+        var executor = trackSendExecutor
+        if (executor.isShutdown || executor.isTerminated) {
+            synchronized(this) {
+                executor = trackSendExecutor
+                if (executor.isShutdown || executor.isTerminated) {
+                    executor = createTrackSendExecutor()
+                    trackSendExecutor = executor
+                }
+            }
         }
         CustomTrackManager.scan(serverDir(currentServer()))
         loadDimensionDelays()
@@ -2327,7 +2359,9 @@ object MusicManager {
     }
 
     private fun getDelaysFile(): java.io.File {
-        val configDir = java.io.File("config")
+        val server = currentServer()
+        val baseDir = if (server != null) serverDir(server) else java.io.File("config")
+        val configDir = java.io.File(baseDir, "config")
         if (!configDir.exists()) configDir.mkdirs()
         val newFile = java.io.File(configDir, "musync_dimension_delays.properties")
         if (!newFile.exists()) {
@@ -2345,8 +2379,8 @@ object MusicManager {
         }
         try {
             val sDir = serverDir(currentServer())
-            val oldDir = java.io.File(sDir, "musync")
-            if (oldDir.exists() && oldDir.isDirectory) oldDir.deleteRecursively()
+            val oldFile = java.io.File(java.io.File(sDir, "musync"), "dimension_delays.properties")
+            if (oldFile.exists()) oldFile.delete()
         } catch (_: Exception) { }
         return newFile
     }
@@ -2465,11 +2499,14 @@ object MusicManager {
         lastTrackRequestTime[player.uuid] = now
 
         dev.mcrib884.musync.MuSyncLog.info("${player.name.string} requested ${validNames.size} missing tracks")
-        trackSendExecutor.submit {
+        val executor = trackSendExecutor
+        if (!executor.isShutdown && !executor.isTerminated) {
+            executor.submit {
             for (name in validNames) {
                 streamCustomTrackToPlayer(name, player)
             }
-            dev.mcrib884.musync.MuSyncLog.info("Finished sending ${validNames.size} tracks to ${player.name.string}")
+                dev.mcrib884.musync.MuSyncLog.info("Finished sending ${validNames.size} tracks to ${player.name.string}")
+            }
         }
     }
 
@@ -2490,11 +2527,11 @@ object MusicManager {
         val file = CustomTrackManager.getTrackFile(trackName) ?: return
         val chunkSize = dev.mcrib884.musync.network.CustomTrackDataPacket.CHUNK_SIZE
         val fileSizeLong = file.length()
-        if (fileSizeLong <= 0L || fileSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES || fileSizeLong > Int.MAX_VALUE.toLong()) {
+        if (fileSizeLong <= 0L || fileSizeLong > PacketIO.MAX_TRACK_SIZE_BYTES) {
             dev.mcrib884.musync.MuSyncLog.warn("Skipping custom track with invalid size '$trackName': $fileSizeLong")
             return
         }
-        val fileSize = fileSizeLong.toInt()
+        val fileSize = minOf(fileSizeLong, Int.MAX_VALUE.toLong()).toInt()
         val totalChunks = (fileSize + chunkSize - 1) / chunkSize
 
         try {
@@ -2527,7 +2564,9 @@ object MusicManager {
 
     private fun sendCustomTrackToPlayer(trackName: String, player: ServerPlayer) {
         if (!shouldSendCustomTrackToPlayer(trackName, player)) return
-        trackSendExecutor.submit {
+        val executor = trackSendExecutor
+        if (executor.isShutdown || executor.isTerminated) return
+        executor.submit {
             streamCustomTrackToPlayer(trackName, player)
         }
     }

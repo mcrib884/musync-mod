@@ -49,6 +49,8 @@ object ClientMusicPlayer {
     private var lastMasterVol: Float = -1f
 
     private var gamePaused: Boolean = false
+    private var suppressTickCounter: Int = 0
+    private const val SUPPRESS_INTERVAL_TICKS = 10
     private var isLoading: Boolean = false
     private var loadingTrack: String? = null
     private var loadingPositionMs: Long = 0
@@ -241,8 +243,15 @@ object ClientMusicPlayer {
     }
 
     private fun startAsyncLoad(trackId: String, startPositionMs: Long, specificSound: String, startPaused: Boolean) {
-        if (loadExecutor.isShutdown || loadExecutor.isTerminated) {
-            loadExecutor = createLoadExecutor()
+        var executor = loadExecutor
+        if (executor.isShutdown || executor.isTerminated) {
+            synchronized(this) {
+                executor = loadExecutor
+                if (executor.isShutdown || executor.isTerminated) {
+                    executor = createLoadExecutor()
+                    loadExecutor = executor
+                }
+            }
         }
         val mc = Minecraft.getInstance()
         stopMusicInternal()
@@ -262,7 +271,7 @@ object ClientMusicPlayer {
         val token = ++loadToken
 
         val specific = specificSound
-        queuedLoadTask = loadExecutor.submit {
+        queuedLoadTask = executor.submit {
             try {
                 val prepared = if (trackId.startsWith("custom:")) {
                     val fileName = trackId.removePrefix("custom:")
@@ -636,7 +645,11 @@ object ClientMusicPlayer {
         ClientTrackManager.onClientTick()
 
         if (musyncActive) {
-            suppressVanillaMusic(mc)
+            suppressTickCounter++
+            if (suppressTickCounter >= SUPPRESS_INTERVAL_TICKS) {
+                suppressTickCounter = 0
+                suppressVanillaMusic(mc)
+            }
         }
 
         val player = mc.player
@@ -729,8 +742,8 @@ object ClientMusicPlayer {
         isPlaying = false
         isPaused = false
         pausedPosition = 0
-        trackStartTime = 0
         playStartTime = 0
+        suppressTickCounter = 0
         finishCheckBlockedUntilMs = 0
         customTrackSource = -1
         gamePaused = false

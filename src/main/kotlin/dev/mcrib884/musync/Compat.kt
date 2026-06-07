@@ -83,9 +83,6 @@ internal fun CommandSourceStack.sendSuccessCompat(message: () -> Component, broa
 //? if >=1.21.11 {
 /*internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
 	music.sound().value().location*/
-//?} else if >=1.21.11 {
-/*internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
-	music.sound.value().location*/
 //?} else if >=1.19.3 {
 internal fun musicEventLocation(music: net.minecraft.sounds.Music): ResourceLocation =
 	music.event.value().location

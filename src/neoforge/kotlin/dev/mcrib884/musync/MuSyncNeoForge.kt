@@ -48,15 +48,15 @@ class MuSyncNeoForge(modBus: IEventBus) {
         if (isNeoForgeClient()) {
             modBus.addListener<RegisterKeyMappingsEvent> { event ->
                 KeyBindings.MUSIC_GUI_KEY = createKeyMapping("key.musync.gui", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
-                event.register(KeyBindings.MUSIC_GUI_KEY)
+                event.register(KeyBindings.MUSIC_GUI_KEY!!)
                 KeyBindings.MUSIC_SKIP_KEY = createKeyMapping("key.musync.skip", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
-                event.register(KeyBindings.MUSIC_SKIP_KEY)
+                event.register(KeyBindings.MUSIC_SKIP_KEY!!)
                 KeyBindings.MUSIC_PAUSE_KEY = createKeyMapping("key.musync.pause_resume", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
-                event.register(KeyBindings.MUSIC_PAUSE_KEY)
+                event.register(KeyBindings.MUSIC_PAUSE_KEY!!)
                 KeyBindings.MUSIC_STOP_KEY = createKeyMapping("key.musync.stop", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
-                event.register(KeyBindings.MUSIC_STOP_KEY)
+                event.register(KeyBindings.MUSIC_STOP_KEY!!)
                 KeyBindings.MUSIC_PREV_KEY = createKeyMapping("key.musync.previous", InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.value, "key.categories.musync")
-                event.register(KeyBindings.MUSIC_PREV_KEY)
+                event.register(KeyBindings.MUSIC_PREV_KEY!!)
             }
 
             NeoForge.EVENT_BUS.addListener<ClientTickEvent.Post> { _ ->
@@ -64,7 +64,7 @@ class MuSyncNeoForge(modBus: IEventBus) {
                 ClientOnlyController.onClientTick()
                 val mc = Minecraft.getInstance()
                 if (mc.player != null && mc.screen == null) {
-                    if (KeyBindings.MUSIC_GUI_KEY.consumeClick()) {
+                    if (KeyBindings.MUSIC_GUI_KEY!!.consumeClick()) {
                         if (ClientMusicPlayer.musyncActive) {
                             if (ClientTrackManager.isDownloading) mc.setScreen(TrackDownloadScreen())
                             else mc.setScreen(MusicControlScreen())
@@ -75,31 +75,31 @@ class MuSyncNeoForge(modBus: IEventBus) {
                     }
                     if (ClientMusicPlayer.musyncActive && !ClientTrackManager.isDownloading) {
                         val targetDim = playerDimString(mc.player)
-                        if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) {
+                        if (KeyBindings.MUSIC_SKIP_KEY!!.consumeClick()) {
                             PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.SKIP, null, null, targetDim = targetDim))
                         }
-                        if (KeyBindings.MUSIC_PAUSE_KEY.consumeClick()) {
+                        if (KeyBindings.MUSIC_PAUSE_KEY!!.consumeClick()) {
                             val status = ClientMusicPlayer.getCurrentStatus()
                             val action = if (status != null && status.isPlaying)
                                 MusicControlPacket.Action.PAUSE else MusicControlPacket.Action.RESUME
                             PacketHandler.sendToServer(MusicControlPacket(action, null, null, targetDim = targetDim))
                         }
-                        if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) {
+                        if (KeyBindings.MUSIC_STOP_KEY!!.consumeClick()) {
                             PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.STOP, null, null, targetDim = targetDim))
                         }
-                        if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) {
+                        if (KeyBindings.MUSIC_PREV_KEY!!.consumeClick()) {
                             PacketHandler.sendToServer(MusicControlPacket(MusicControlPacket.Action.PREVIOUS, null, null, targetDim = targetDim))
                         }
                     } else if (!ClientMusicPlayer.musyncActive) {
-                        if (KeyBindings.MUSIC_SKIP_KEY.consumeClick()) ClientOnlyController.skip()
-                        if (KeyBindings.MUSIC_PAUSE_KEY.consumeClick()) ClientOnlyController.togglePause()
-                        if (KeyBindings.MUSIC_STOP_KEY.consumeClick()) ClientOnlyController.stop()
-                        if (KeyBindings.MUSIC_PREV_KEY.consumeClick()) ClientOnlyController.previous()
+                        if (KeyBindings.MUSIC_SKIP_KEY!!.consumeClick()) ClientOnlyController.skip()
+                        if (KeyBindings.MUSIC_PAUSE_KEY!!.consumeClick()) ClientOnlyController.togglePause()
+                        if (KeyBindings.MUSIC_STOP_KEY!!.consumeClick()) ClientOnlyController.stop()
+                        if (KeyBindings.MUSIC_PREV_KEY!!.consumeClick()) ClientOnlyController.previous()
                     } else {
-                        KeyBindings.MUSIC_SKIP_KEY.consumeClick()
-                        KeyBindings.MUSIC_PAUSE_KEY.consumeClick()
-                        KeyBindings.MUSIC_STOP_KEY.consumeClick()
-                        KeyBindings.MUSIC_PREV_KEY.consumeClick()
+                        KeyBindings.MUSIC_SKIP_KEY!!.consumeClick()
+                        KeyBindings.MUSIC_PAUSE_KEY!!.consumeClick()
+                        KeyBindings.MUSIC_STOP_KEY!!.consumeClick()
+                        KeyBindings.MUSIC_PREV_KEY!!.consumeClick()
                     }
                 }
             }

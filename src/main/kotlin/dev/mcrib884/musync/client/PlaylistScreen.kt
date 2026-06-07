@@ -746,7 +746,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
 
     //? if >=1.21.11 {
     /*override fun keyPressed(event: net.minecraft.client.input.KeyEvent): Boolean {
-        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(event)) {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY!!.matches(event)) {
             onClose()
             return true
         }
@@ -754,7 +754,7 @@ class PlaylistScreen : Screen(Component.literal("MuSync - Playlist")) {
     }*/
     //?} else {
     override fun keyPressed(keyCode: Int, scanCode: Int, modifiers: Int): Boolean {
-        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY.matches(keyCode, scanCode)) {
+        if (dev.mcrib884.musync.KeyBindings.MUSIC_GUI_KEY!!.matches(keyCode, scanCode)) {
             onClose()
             return true
         }

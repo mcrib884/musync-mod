@@ -4,9 +4,14 @@ import org.apache.logging.log4j.LogManager
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Properties
+import java.io.File
 
 object MuSyncConfig {
-    private val configPath: Path = Path.of("config", "musync.properties")
+    private val configPath: Path by lazy {
+        val server = currentServer()
+        val dir = if (server != null) serverDir(server) else File("config")
+        Path.of(dir.toPath().toString(), "musync.properties")
+    }
 
     @Volatile
     var logging: Boolean = false
